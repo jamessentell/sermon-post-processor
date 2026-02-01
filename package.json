@@ -1,0 +1,13 @@
+{
+  "name": "sermon-post-processor",
+  "version": "1.0.0",
+  "description": "Convert 4K video files to 1080p for Facebook posting",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron . --no-sandbox"
+  },
+  "dependencies": {
+    "electron": "^28.0.0",
+    "fluent-ffmpeg": "^2.1.2"
+  }
+}
