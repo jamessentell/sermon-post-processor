@@ -1,18 +1,13 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const ffmpeg = require('fluent-ffmpeg');
 const { execSync } = require('child_process');
+const converter = require('./converter');
 
 let mainWindow;
 let usbMonitoringInterval = null;
 let knownMountPoints = new Set();
 let isProcessingCamera = false;
-let currentFfmpegProcess = null;
-let currentOutputPath = null;
-let currentTempPath = null;
-let currentCopyStreams = null;
-let isCopyCancelled = false;
 
 // Settings file path
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
@@ -49,6 +44,13 @@ function createWindow() {
   });
 
   mainWindow.loadFile('index.html');
+
+  // Initialize converter with event callbacks
+  converter.init({
+    onProgress: (percent) => mainWindow.webContents.send('conversion-progress', percent),
+    onStatus: (message) => mainWindow.webContents.send('conversion-status', message),
+    onCopyProgress: (percent) => mainWindow.webContents.send('copy-progress', percent)
+  });
 }
 
 app.whenReady().then(createWindow);
@@ -108,142 +110,15 @@ ipcMain.handle('get-output-folder', async () => {
 // Handle video conversion
 ipcMain.handle('convert-video', async (event, inputPath) => {
   const settings = loadSettings();
-  const outputFolder = settings.outputFolder;
-
-  if (!outputFolder) {
-    throw new Error('Please select an output folder first');
-  }
-
-  // Track if this is a temp file (from auto-detection)
-  const basename = path.basename(inputPath);
-  if (basename.startsWith('temp_')) {
-    currentTempPath = inputPath;
-  }
-
-  return new Promise((resolve, reject) => {
-    // Get file modification date
-    const stats = fs.statSync(inputPath);
-    const fileDate = stats.mtime;
-    const dateFolderName = fileDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-
-    // Create date-based subfolder
-    const dateFolder = path.join(outputFolder, dateFolderName);
-    if (!fs.existsSync(dateFolder)) {
-      fs.mkdirSync(dateFolder, { recursive: true });
-    }
-
-    const ext = path.extname(inputPath);
-    // Remove temp_ prefix from output filename if present
-    let outputBasename = path.basename(inputPath, ext);
-    if (outputBasename.startsWith('temp_')) {
-      outputBasename = outputBasename.substring(5);
-    }
-    const outputPath = path.join(dateFolder, `${outputBasename}_1080p${ext}`);
-    currentOutputPath = outputPath;
-
-    const ffmpegProcess = ffmpeg(inputPath)
-      .outputOptions([
-        '-vf', 'scale=-2:1080',
-        '-c:v', 'libx264',
-        '-preset', 'medium',
-        '-crf', '23',
-        '-c:a', 'aac',
-        '-b:a', '128k'
-      ])
-      .output(outputPath)
-      .on('start', () => {
-        mainWindow.webContents.send('conversion-status', 'Starting conversion...');
-      })
-      .on('progress', (progress) => {
-        const percent = progress.percent || 0;
-        mainWindow.webContents.send('conversion-progress', percent);
-        mainWindow.webContents.send('conversion-status', `Converting: ${percent.toFixed(1)}%`);
-      })
-      .on('end', () => {
-        currentFfmpegProcess = null;
-        currentOutputPath = null;
-        // Clean up temp file after successful conversion
-        if (currentTempPath && fs.existsSync(currentTempPath)) {
-          fs.unlinkSync(currentTempPath);
-          currentTempPath = null;
-        }
-        mainWindow.webContents.send('conversion-progress', 100);
-        mainWindow.webContents.send('conversion-status', 'Conversion complete!');
-        resolve(outputPath);
-      })
-      .on('error', (err, stdout, stderr) => {
-        currentFfmpegProcess = null;
-        currentOutputPath = null;
-        // Don't report error if it was cancelled
-        if (err.message.includes('SIGKILL') || err.message.includes('ffmpeg was killed')) {
-          return;
-        }
-        mainWindow.webContents.send('conversion-status', `Error: ${err.message}`);
-        reject(err);
-      });
-
-    currentFfmpegProcess = ffmpegProcess;
-    ffmpegProcess.run();
-  });
+  return converter.convertVideo(inputPath, settings.outputFolder);
 });
 
 // Handle conversion/copy cancellation
 ipcMain.handle('cancel-conversion', async () => {
-  let wasCopying = false;
-
-  // Cancel copy operation if in progress
-  if (currentCopyStreams) {
-    wasCopying = true;
-    isCopyCancelled = true;
-    const { readStream, writeStream, destPath } = currentCopyStreams;
-
-    readStream.destroy();
-    writeStream.destroy();
-    currentCopyStreams = null;
-
-    // Clean up partial copy file
-    if (destPath && fs.existsSync(destPath)) {
-      try {
-        fs.unlinkSync(destPath);
-      } catch (err) {
-        console.error('Error deleting partial copy file:', err);
-      }
-    }
-
+  const { wasCopying } = converter.cancel();
+  if (wasCopying) {
     isProcessingCamera = false;
   }
-
-  // Cancel ffmpeg if in progress
-  if (currentFfmpegProcess) {
-    currentFfmpegProcess.kill('SIGKILL');
-    currentFfmpegProcess = null;
-  }
-
-  // Clean up partial output file
-  if (currentOutputPath && fs.existsSync(currentOutputPath)) {
-    try {
-      fs.unlinkSync(currentOutputPath);
-    } catch (err) {
-      console.error('Error deleting partial output file:', err);
-    }
-  }
-
-  // Clean up temp file from auto-detection
-  if (currentTempPath && fs.existsSync(currentTempPath)) {
-    try {
-      fs.unlinkSync(currentTempPath);
-    } catch (err) {
-      console.error('Error deleting temp file:', err);
-    }
-  }
-
-  currentOutputPath = null;
-  currentTempPath = null;
-
-  const message = wasCopying ? 'Copy cancelled' : 'Conversion cancelled';
-  mainWindow.webContents.send('conversion-status', message);
-  mainWindow.webContents.send('conversion-progress', 0);
-
   return true;
 });
 
@@ -318,73 +193,6 @@ function getLatestVideoFile(clipPath) {
   }
 }
 
-function fileExistsInOutput(sourcePath) {
-  const settings = loadSettings();
-  const outputFolder = settings.outputFolder;
-  if (!outputFolder) return false;
-
-  const stats = fs.statSync(sourcePath);
-  const fileDate = stats.mtime;
-  const dateFolderName = fileDate.toISOString().split('T')[0];
-  const dateFolder = path.join(outputFolder, dateFolderName);
-
-  const ext = path.extname(sourcePath);
-  const basename = path.basename(sourcePath, ext);
-  const outputPath = path.join(dateFolder, `${basename}_1080p${ext}`);
-
-  return fs.existsSync(outputPath);
-}
-
-async function copyFile(sourcePath, destPath) {
-  return new Promise((resolve, reject) => {
-    const stats = fs.statSync(sourcePath);
-    const totalSize = stats.size;
-    let copiedSize = 0;
-    isCopyCancelled = false;
-
-    const readStream = fs.createReadStream(sourcePath);
-    const writeStream = fs.createWriteStream(destPath);
-
-    // Store streams for potential cancellation
-    currentCopyStreams = { readStream, writeStream, destPath };
-
-    readStream.on('data', (chunk) => {
-      copiedSize += chunk.length;
-      const percent = (copiedSize / totalSize) * 100;
-      mainWindow.webContents.send('copy-progress', percent);
-    });
-
-    readStream.on('error', (err) => {
-      currentCopyStreams = null;
-      if (!isCopyCancelled) {
-        reject(err);
-      }
-    });
-
-    writeStream.on('error', (err) => {
-      currentCopyStreams = null;
-      if (!isCopyCancelled) {
-        reject(err);
-      }
-    });
-
-    writeStream.on('finish', () => {
-      currentCopyStreams = null;
-      if (!isCopyCancelled) {
-        resolve();
-      }
-    });
-
-    writeStream.on('close', () => {
-      if (isCopyCancelled) {
-        reject(new Error('Copy cancelled'));
-      }
-    });
-
-    readStream.pipe(writeStream);
-  });
-}
-
 async function copyAndConvert(sourcePath) {
   const settings = loadSettings();
   const outputFolder = settings.outputFolder;
@@ -395,7 +203,7 @@ async function copyAndConvert(sourcePath) {
   }
 
   // Check if already processed
-  if (fileExistsInOutput(sourcePath)) {
+  if (converter.outputExists(sourcePath, outputFolder)) {
     mainWindow.webContents.send('conversion-status', 'File already processed, skipping');
     mainWindow.webContents.send('camera-detected', { status: 'skipped', file: path.basename(sourcePath) });
     return;
@@ -407,16 +215,17 @@ async function copyAndConvert(sourcePath) {
   try {
     // Copy file
     mainWindow.webContents.send('conversion-status', 'Copying file from camera...');
-    await copyFile(sourcePath, tempPath);
+    await converter.copyFile(sourcePath, tempPath);
     mainWindow.webContents.send('copy-progress', 100);
     mainWindow.webContents.send('conversion-status', 'Copy complete, starting conversion...');
 
     // Trigger conversion via the existing convert-video handler logic
-    // We'll emit an event to tell renderer to start conversion
     mainWindow.webContents.send('auto-convert-ready', tempPath);
   } catch (err) {
     console.error('Error copying file:', err);
-    mainWindow.webContents.send('conversion-status', `Error copying file: ${err.message}`);
+    if (err.message !== 'Copy cancelled') {
+      mainWindow.webContents.send('conversion-status', `Error copying file: ${err.message}`);
+    }
     // Clean up temp file if exists
     if (fs.existsSync(tempPath)) {
       fs.unlinkSync(tempPath);
