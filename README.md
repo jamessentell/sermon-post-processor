@@ -60,7 +60,7 @@ Exposes safe IPC methods to renderer:
 ```
 [Output Folder]/
 └── 2026-01-26/              # Date from video file (modification date)
-    └── sermon_1080p.mp4     # Converted file
+    └── Video_1080p.mp4     # Converted file
 ```
 
 ## Prerequisites

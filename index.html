@@ -93,8 +93,14 @@
       white-space: nowrap;
     }
 
-    #outputFolderBtn:hover {
+    #outputFolderBtn:hover:not(:disabled) {
       background: #1a4a7a;
+    }
+
+    #outputFolderBtn:disabled {
+      background: #333;
+      color: #666;
+      cursor: not-allowed;
     }
 
     .buttons {
@@ -122,8 +128,14 @@
       color: #eee;
     }
 
-    #selectBtn:hover {
+    #selectBtn:hover:not(:disabled) {
       background: #1a4a7a;
+    }
+
+    #selectBtn:disabled {
+      background: #333;
+      color: #666;
+      cursor: not-allowed;
     }
 
     #convertBtn {
@@ -138,6 +150,20 @@
     #convertBtn:disabled {
       background: #555;
       cursor: not-allowed;
+    }
+
+    #cancelBtn {
+      background: #555;
+      color: #eee;
+      display: none;
+    }
+
+    #cancelBtn:hover {
+      background: #777;
+    }
+
+    #cancelBtn.visible {
+      display: block;
     }
 
     .progress-container {
@@ -168,11 +194,95 @@
     .status.error {
       color: #e94560;
     }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #0f3460;
+      border-radius: 8px;
+      padding: 12px 15px;
+      margin-bottom: 20px;
+    }
+
+    .toggle-label {
+      color: #eee;
+      font-size: 0.9rem;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 50px;
+      height: 26px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #555;
+      transition: 0.3s;
+      border-radius: 26px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #eee;
+      transition: 0.3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+      background-color: #4ecca3;
+    }
+
+    input:checked + .toggle-slider:before {
+      transform: translateX(24px);
+    }
+
+    .usb-status {
+      font-size: 0.75rem;
+      color: #888;
+      margin-left: 10px;
+    }
+
+    .usb-status.active {
+      color: #4ecca3;
+    }
+
+    .usb-status.detected {
+      color: #e94560;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Sermon Post Processor</h1>
+
+    <div class="toggle-row">
+      <div>
+        <span class="toggle-label">Auto-detect camera USB</span>
+        <span class="usb-status" id="usbStatus"></span>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="usbToggle">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
 
     <div class="section-label">Output Folder</div>
     <div class="folder-row">
@@ -186,6 +296,7 @@
     <div class="buttons">
       <button id="selectBtn">Select Video</button>
       <button id="convertBtn" disabled>Convert to 1080p</button>
+      <button id="cancelBtn">Cancel</button>
     </div>
     <div class="progress-container">
       <div class="progress-bar" id="progressBar"></div>
