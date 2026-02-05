@@ -157,9 +157,17 @@ function copyFile(sourcePath, destPath) {
 
     writeStream.on('finish', () => {
       currentCopyStreams = null;
-      if (!isCopyCancelled) {
-        resolve();
+      if (isCopyCancelled) {
+        return;
       }
+
+      fs.utimes(destPath, stats.atime, stats.mtime, (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve();
+      });
     });
 
     writeStream.on('close', () => {
@@ -201,7 +209,25 @@ function cancel() {
 
   // Cancel ffmpeg if in progress
   if (currentFfmpegProcess) {
-    currentFfmpegProcess.kill('SIGKILL');
+    const ffmpegProcess = currentFfmpegProcess;
+    const killTimeout = setTimeout(() => {
+      try {
+        ffmpegProcess.kill('SIGKILL');
+      } catch (err) {
+        // Ignore errors while forcing termination
+      }
+    }, 5000);
+
+    ffmpegProcess.once('exit', () => {
+      clearTimeout(killTimeout);
+    });
+
+    try {
+      ffmpegProcess.kill('SIGINT');
+    } catch (err) {
+      clearTimeout(killTimeout);
+    }
+
     currentFfmpegProcess = null;
   }
 
@@ -243,7 +269,13 @@ function cancel() {
 function outputExists(sourcePath, outputFolder) {
   if (!outputFolder) return false;
 
-  const stats = fs.statSync(sourcePath);
+  let stats;
+  try {
+    stats = fs.statSync(sourcePath);
+  } catch (err) {
+    return false;
+  }
+
   const fileDate = stats.mtime;
   const dateFolderName = fileDate.toISOString().split('T')[0];
   const dateFolder = path.join(outputFolder, dateFolderName);
