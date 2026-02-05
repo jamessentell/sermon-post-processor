@@ -6,11 +6,14 @@ const fileDisplay = document.getElementById('fileDisplay');
 const folderDisplay = document.getElementById('folderDisplay');
 const progressBar = document.getElementById('progressBar');
 const status = document.getElementById('status');
+const statusMeta = document.getElementById('statusMeta');
 const usbToggle = document.getElementById('usbToggle');
+const usbIndicator = document.getElementById('usbIndicator');
 const usbStatus = document.getElementById('usbStatus');
 
 // Facebook elements
-const facebookStatus = document.getElementById('facebookStatus');
+const facebookStatusContainer = document.getElementById('facebookStatusContainer');
+const facebookStatusText = document.getElementById('facebookStatus');
 const facebookConnectBtn = document.getElementById('facebookConnectBtn');
 const postToFacebookBtn = document.getElementById('postToFacebookBtn');
 const setupModal = document.getElementById('setupModal');
@@ -31,9 +34,23 @@ let isFacebookConnected = false;
 
 function showCancelButton(show) {
   if (show) {
-    cancelBtn.classList.add('visible');
+    cancelBtn.classList.remove('hidden');
   } else {
-    cancelBtn.classList.remove('visible');
+    cancelBtn.classList.add('hidden');
+  }
+}
+
+function setProgressState(state) {
+  progressBar.classList.remove('active', 'success', 'error');
+  if (state) {
+    progressBar.classList.add(state);
+  }
+}
+
+function setStatusState(state) {
+  status.classList.remove('success', 'error', 'working');
+  if (state) {
+    status.classList.add(state);
   }
 }
 
@@ -43,7 +60,7 @@ async function init() {
   if (savedFolder) {
     outputFolder = savedFolder;
     folderDisplay.textContent = savedFolder;
-    folderDisplay.classList.add('has-folder');
+    folderDisplay.classList.add('has-value');
     updateConvertButton();
   }
 
@@ -68,15 +85,13 @@ async function initFacebook() {
 function updateFacebookUI(fbStatus) {
   isFacebookConnected = fbStatus.connected;
   if (fbStatus.connected) {
-    facebookStatus.textContent = `Connected: ${fbStatus.pageName}`;
-    facebookStatus.classList.add('connected');
+    facebookStatusText.textContent = `Facebook: ${fbStatus.pageName}`;
+    facebookStatusContainer.classList.add('connected');
     facebookConnectBtn.textContent = 'Disconnect';
-    facebookConnectBtn.classList.add('disconnect');
   } else {
-    facebookStatus.textContent = 'Not connected';
-    facebookStatus.classList.remove('connected');
+    facebookStatusText.textContent = 'Facebook: Not connected';
+    facebookStatusContainer.classList.remove('connected');
     facebookConnectBtn.textContent = fbStatus.hasCredentials ? 'Connect' : 'Setup';
-    facebookConnectBtn.classList.remove('disconnect');
   }
   updatePostToFacebookButton();
 }
@@ -120,30 +135,30 @@ async function selectPage(page) {
     hidePageModal();
     await initFacebook();
     status.textContent = `Connected to ${page.name}`;
-    status.className = 'status success';
+    setStatusState('success');
   } catch (err) {
     status.textContent = `Error: ${err.message}`;
-    status.className = 'status error';
+    setStatusState('error');
   }
 }
 
 function updateUsbStatus(state) {
-  usbStatus.className = 'usb-status';
+  usbIndicator.classList.remove('active', 'detected');
   switch (state) {
     case 'monitoring':
-      usbStatus.textContent = 'Monitoring...';
-      usbStatus.classList.add('active');
+      usbStatus.textContent = 'Monitoring for USB';
+      usbIndicator.classList.add('active');
       break;
     case 'detected':
       usbStatus.textContent = 'Camera detected!';
-      usbStatus.classList.add('detected');
+      usbIndicator.classList.add('detected');
       break;
     case 'copying':
-      usbStatus.textContent = 'Copying...';
-      usbStatus.classList.add('detected');
+      usbStatus.textContent = 'Copying from camera...';
+      usbIndicator.classList.add('detected');
       break;
     default:
-      usbStatus.textContent = '';
+      usbStatus.textContent = 'USB Monitoring Off';
   }
 }
 
@@ -161,7 +176,7 @@ function updateStatus() {
   } else {
     status.textContent = 'Ready to convert';
   }
-  status.className = 'status';
+  setStatusState(null);
 }
 
 outputFolderBtn.addEventListener('click', async () => {
@@ -171,7 +186,7 @@ outputFolderBtn.addEventListener('click', async () => {
   if (folderPath) {
     outputFolder = folderPath;
     folderDisplay.textContent = folderPath;
-    folderDisplay.classList.add('has-folder');
+    folderDisplay.classList.add('has-value');
     updateConvertButton();
     updateStatus();
   }
@@ -184,8 +199,9 @@ selectBtn.addEventListener('click', async () => {
   if (filePath) {
     selectedFile = filePath;
     fileDisplay.textContent = filePath;
-    fileDisplay.classList.add('has-file');
+    fileDisplay.classList.add('has-value');
     progressBar.style.width = '0%';
+    setProgressState(null);
     updateConvertButton();
     updateStatus();
   }
@@ -200,15 +216,19 @@ convertBtn.addEventListener('click', async () => {
   outputFolderBtn.disabled = true;
   showCancelButton(true);
   updatePostToFacebookButton();
+  setProgressState('active');
+  setStatusState('working');
 
   try {
     const outputPath = await window.api.convertVideo(selectedFile);
     lastConvertedPath = outputPath;
     status.textContent = `Saved: ${outputPath}`;
-    status.className = 'status success';
+    setStatusState('success');
+    setProgressState('success');
   } catch (err) {
     status.textContent = `Error: ${err.message}`;
-    status.className = 'status error';
+    setStatusState('error');
+    setProgressState('error');
   } finally {
     isConverting = false;
     updateConvertButton();
@@ -224,7 +244,7 @@ cancelBtn.addEventListener('click', async () => {
 
   cancelBtn.disabled = true;
   status.textContent = 'Cancelling...';
-  status.className = 'status';
+  setStatusState(null);
 
   try {
     await window.api.cancelConversion();
@@ -238,6 +258,9 @@ cancelBtn.addEventListener('click', async () => {
     outputFolderBtn.disabled = false;
     usbToggle.disabled = false;
     showCancelButton(false);
+    setProgressState(null);
+    progressBar.style.width = '0%';
+    statusMeta.textContent = '';
     // Reset USB status if monitoring is enabled
     if (usbToggle.checked) {
       updateUsbStatus('monitoring');
@@ -245,22 +268,25 @@ cancelBtn.addEventListener('click', async () => {
     // Reset file display
     selectedFile = null;
     fileDisplay.textContent = 'No file selected';
-    fileDisplay.classList.remove('has-file');
+    fileDisplay.classList.remove('has-value');
   }
 });
 
 window.api.onProgress((percent) => {
   progressBar.style.width = `${percent}%`;
+  statusMeta.textContent = `${percent.toFixed(0)}%`;
 });
 
 window.api.onStatus((message) => {
   status.textContent = message;
-  status.className = 'status';
+  setStatusState('working');
 
-  if (message.includes('complete')) {
-    status.className = 'status success';
+  if (message.includes('complete') || message.includes('Saved')) {
+    setStatusState('success');
+    setProgressState('success');
   } else if (message.includes('Error')) {
-    status.className = 'status error';
+    setStatusState('error');
+    setProgressState('error');
   }
 });
 
@@ -277,7 +303,7 @@ window.api.onCameraDetected((data) => {
     case 'detected':
       updateUsbStatus('detected');
       status.textContent = 'Camera detected, searching for videos...';
-      status.className = 'status';
+      setStatusState('working');
       // Disable UI when camera is detected
       selectBtn.disabled = true;
       outputFolderBtn.disabled = true;
@@ -287,7 +313,8 @@ window.api.onCameraDetected((data) => {
     case 'found-video':
       updateUsbStatus('copying');
       status.textContent = `Found: ${data.file}`;
-      status.className = 'status';
+      setStatusState('working');
+      setProgressState('active');
       // Show cancel button for copy operation
       showCancelButton(true);
       isConverting = true; // Treat copy as part of conversion process
@@ -295,7 +322,7 @@ window.api.onCameraDetected((data) => {
     case 'skipped':
       updateUsbStatus('monitoring');
       status.textContent = `${data.file} already processed, skipping`;
-      status.className = 'status success';
+      setStatusState('success');
       // Re-enable UI
       selectBtn.disabled = false;
       outputFolderBtn.disabled = false;
@@ -308,9 +335,10 @@ window.api.onCameraDetected((data) => {
 // Copy progress
 window.api.onCopyProgress((percent) => {
   progressBar.style.width = `${percent}%`;
+  statusMeta.textContent = `Copying: ${percent.toFixed(0)}%`;
   if (percent < 100) {
-    status.textContent = `Copying: ${percent.toFixed(1)}%`;
-    status.className = 'status';
+    status.textContent = `Copying from camera...`;
+    setStatusState('working');
   }
 });
 
@@ -324,6 +352,8 @@ window.api.onAutoConvertReady(async (filePath) => {
   usbToggle.disabled = true;
   showCancelButton(true);
   updatePostToFacebookButton();
+  setProgressState('active');
+  setStatusState('working');
 
   // Update file display to show the auto-detected file (remove temp_ prefix for cleaner display)
   selectedFile = filePath;
@@ -338,19 +368,22 @@ window.api.onAutoConvertReady(async (filePath) => {
     }
   }
   fileDisplay.textContent = displayName;
-  fileDisplay.classList.add('has-file');
+  fileDisplay.classList.add('has-value');
 
   // Reset progress bar for conversion (was showing copy progress)
   progressBar.style.width = '0%';
+  statusMeta.textContent = '';
 
   try {
     const outputPath = await window.api.convertVideo(filePath);
     lastConvertedPath = outputPath;
     status.textContent = `Saved: ${outputPath}`;
-    status.className = 'status success';
+    setStatusState('success');
+    setProgressState('success');
   } catch (err) {
     status.textContent = `Error: ${err.message}`;
-    status.className = 'status error';
+    setStatusState('error');
+    setProgressState('error');
   } finally {
     isConverting = false;
     updateConvertButton();
@@ -370,10 +403,10 @@ facebookConnectBtn.addEventListener('click', async () => {
       await window.api.disconnectFacebook();
       await initFacebook();
       status.textContent = 'Disconnected from Facebook';
-      status.className = 'status';
+      setStatusState(null);
     } catch (err) {
       status.textContent = `Error: ${err.message}`;
-      status.className = 'status error';
+      setStatusState('error');
     }
   } else {
     // Check if we have credentials
@@ -396,7 +429,7 @@ setupSaveBtn.addEventListener('click', async () => {
 
   if (!appId || !appSecret) {
     status.textContent = 'Please enter both App ID and App Secret';
-    status.className = 'status error';
+    setStatusState('error');
     return;
   }
 
@@ -406,7 +439,7 @@ setupSaveBtn.addEventListener('click', async () => {
     startFacebookAuth();
   } catch (err) {
     status.textContent = `Error: ${err.message}`;
-    status.className = 'status error';
+    setStatusState('error');
   }
 });
 
@@ -415,14 +448,14 @@ pageCancelBtn.addEventListener('click', hidePageModal);
 async function startFacebookAuth() {
   facebookConnectBtn.disabled = true;
   status.textContent = 'Opening browser for authorization...';
-  status.className = 'status';
+  setStatusState('working');
 
   try {
     const pages = await window.api.startFacebookAuth();
     showPageModal(pages);
   } catch (err) {
     status.textContent = `Error: ${err.message}`;
-    status.className = 'status error';
+    setStatusState('error');
   } finally {
     facebookConnectBtn.disabled = false;
   }
@@ -434,16 +467,21 @@ postToFacebookBtn.addEventListener('click', async () => {
   isPostingToFacebook = true;
   postToFacebookBtn.disabled = true;
   progressBar.style.width = '0%';
+  setProgressState('active');
+  setStatusState('working');
+  statusMeta.textContent = '';
 
   try {
     const result = await window.api.postToFacebook(lastConvertedPath);
     if (result.success) {
       status.textContent = 'Video posted to Facebook!';
-      status.className = 'status success';
+      setStatusState('success');
+      setProgressState('success');
     }
   } catch (err) {
     status.textContent = `Facebook upload failed: ${err.message}`;
-    status.className = 'status error';
+    setStatusState('error');
+    setProgressState('error');
   } finally {
     isPostingToFacebook = false;
     updatePostToFacebookButton();
@@ -453,11 +491,12 @@ postToFacebookBtn.addEventListener('click', async () => {
 // Facebook progress and status listeners
 window.api.onFacebookUploadProgress((percent) => {
   progressBar.style.width = `${percent}%`;
+  statusMeta.textContent = `Uploading: ${percent}%`;
 });
 
 window.api.onFacebookStatus((message) => {
   status.textContent = message;
-  status.className = 'status';
+  setStatusState('working');
 });
 
 init();

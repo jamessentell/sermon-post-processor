@@ -41,8 +41,8 @@ function saveSettings(settings) {
  */
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 600,
-    height: 500,
+    width: 900,
+    height: 600,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
