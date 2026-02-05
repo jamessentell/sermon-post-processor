@@ -1,8 +1,10 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
 const converter = require('./converter');
+const facebook = require('./facebook');
+const authServer = require('./auth-server');
 
 let mainWindow;
 let usbMonitoringInterval = null;
@@ -34,7 +36,7 @@ function saveSettings(settings) {
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 600,
-    height: 400,
+    height: 500,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -329,4 +331,122 @@ app.on('ready', () => {
 // Stop monitoring on app quit
 app.on('before-quit', () => {
   stopUsbMonitoring();
+});
+
+// Facebook IPC Handlers
+const REDIRECT_URI = 'http://localhost:8888/callback';
+
+ipcMain.handle('save-facebook-credentials', async (event, credentials) => {
+  const settings = loadSettings();
+  if (!settings.facebook) {
+    settings.facebook = {};
+  }
+  settings.facebook.appId = credentials.appId;
+  settings.facebook.appSecret = credentials.appSecret;
+  saveSettings(settings);
+  return true;
+});
+
+ipcMain.handle('get-facebook-status', async () => {
+  const settings = loadSettings();
+  if (settings.facebook && settings.facebook.pageAccessToken && settings.facebook.pageName) {
+    return {
+      connected: true,
+      pageName: settings.facebook.pageName
+    };
+  }
+  return {
+    connected: false,
+    hasCredentials: !!(settings.facebook && settings.facebook.appId && settings.facebook.appSecret)
+  };
+});
+
+ipcMain.handle('start-facebook-auth', async () => {
+  const settings = loadSettings();
+  if (!settings.facebook || !settings.facebook.appId || !settings.facebook.appSecret) {
+    throw new Error('Facebook App credentials not configured');
+  }
+
+  const { appId, appSecret } = settings.facebook;
+
+  // Start local server to receive OAuth callback
+  const authPromise = authServer.startAuthServer(8888, 300000);
+
+  // Open browser for authorization
+  const authUrl = facebook.getAuthUrl(appId, REDIRECT_URI);
+  shell.openExternal(authUrl);
+
+  try {
+    // Wait for authorization code
+    const code = await authPromise;
+
+    // Exchange code for token
+    mainWindow.webContents.send('facebook-status', 'Exchanging authorization code...');
+    const shortToken = await facebook.exchangeCodeForToken(code, appId, appSecret, REDIRECT_URI);
+
+    // Get long-lived token
+    mainWindow.webContents.send('facebook-status', 'Getting long-lived token...');
+    const longToken = await facebook.getLongLivedToken(shortToken, appId, appSecret);
+
+    // Get user's pages
+    mainWindow.webContents.send('facebook-status', 'Fetching your pages...');
+    const pages = await facebook.getUserPages(longToken);
+
+    if (pages.length === 0) {
+      throw new Error('No Facebook Pages found. You must manage at least one Page.');
+    }
+
+    return pages;
+  } catch (err) {
+    authServer.stopAuthServer();
+    throw err;
+  }
+});
+
+ipcMain.handle('select-facebook-page', async (event, pageInfo) => {
+  const settings = loadSettings();
+  if (!settings.facebook) {
+    settings.facebook = {};
+  }
+  settings.facebook.pageId = pageInfo.id;
+  settings.facebook.pageName = pageInfo.name;
+  settings.facebook.pageAccessToken = pageInfo.access_token;
+  saveSettings(settings);
+  return true;
+});
+
+ipcMain.handle('disconnect-facebook', async () => {
+  const settings = loadSettings();
+  if (settings.facebook) {
+    delete settings.facebook.pageId;
+    delete settings.facebook.pageName;
+    delete settings.facebook.pageAccessToken;
+  }
+  saveSettings(settings);
+  return true;
+});
+
+ipcMain.handle('post-to-facebook', async (event, videoPath) => {
+  const settings = loadSettings();
+  if (!settings.facebook || !settings.facebook.pageAccessToken) {
+    throw new Error('Facebook not connected');
+  }
+
+  const { pageId, pageAccessToken } = settings.facebook;
+
+  try {
+    const result = await facebook.uploadVideoToPage(
+      pageId,
+      pageAccessToken,
+      videoPath,
+      new Date(),
+      (percent) => mainWindow.webContents.send('facebook-upload-progress', percent),
+      (message) => mainWindow.webContents.send('facebook-status', message)
+    );
+
+    return result;
+  } catch (err) {
+    mainWindow.webContents.send('facebook-status', `Upload failed: ${err.message}`);
+    throw err;
+  }
 });

@@ -9,9 +9,25 @@ const status = document.getElementById('status');
 const usbToggle = document.getElementById('usbToggle');
 const usbStatus = document.getElementById('usbStatus');
 
+// Facebook elements
+const facebookStatus = document.getElementById('facebookStatus');
+const facebookConnectBtn = document.getElementById('facebookConnectBtn');
+const postToFacebookBtn = document.getElementById('postToFacebookBtn');
+const setupModal = document.getElementById('setupModal');
+const pageModal = document.getElementById('pageModal');
+const appIdInput = document.getElementById('appIdInput');
+const appSecretInput = document.getElementById('appSecretInput');
+const setupSaveBtn = document.getElementById('setupSaveBtn');
+const setupCancelBtn = document.getElementById('setupCancelBtn');
+const pageList = document.getElementById('pageList');
+const pageCancelBtn = document.getElementById('pageCancelBtn');
+
 let selectedFile = null;
 let outputFolder = null;
 let isConverting = false;
+let lastConvertedPath = null;
+let isPostingToFacebook = false;
+let isFacebookConnected = false;
 
 function showCancelButton(show) {
   if (show) {
@@ -35,6 +51,80 @@ async function init() {
   const usbMonitoring = await window.api.getUsbMonitoringStatus();
   usbToggle.checked = usbMonitoring.enabled;
   updateUsbStatus(usbMonitoring.active ? 'monitoring' : null);
+
+  // Load Facebook status
+  await initFacebook();
+}
+
+async function initFacebook() {
+  try {
+    const fbStatus = await window.api.getFacebookStatus();
+    updateFacebookUI(fbStatus);
+  } catch (err) {
+    console.error('Error loading Facebook status:', err);
+  }
+}
+
+function updateFacebookUI(fbStatus) {
+  isFacebookConnected = fbStatus.connected;
+  if (fbStatus.connected) {
+    facebookStatus.textContent = `Connected: ${fbStatus.pageName}`;
+    facebookStatus.classList.add('connected');
+    facebookConnectBtn.textContent = 'Disconnect';
+    facebookConnectBtn.classList.add('disconnect');
+  } else {
+    facebookStatus.textContent = 'Not connected';
+    facebookStatus.classList.remove('connected');
+    facebookConnectBtn.textContent = fbStatus.hasCredentials ? 'Connect' : 'Setup';
+    facebookConnectBtn.classList.remove('disconnect');
+  }
+  updatePostToFacebookButton();
+}
+
+function updatePostToFacebookButton() {
+  postToFacebookBtn.disabled = !lastConvertedPath || !isFacebookConnected || isPostingToFacebook || isConverting;
+}
+
+function showSetupModal() {
+  setupModal.classList.add('visible');
+}
+
+function hideSetupModal() {
+  setupModal.classList.remove('visible');
+  appIdInput.value = '';
+  appSecretInput.value = '';
+}
+
+function showPageModal(pages) {
+  pageList.innerHTML = '';
+  pages.forEach(page => {
+    const item = document.createElement('div');
+    item.className = 'page-item';
+    item.innerHTML = `
+      <div class="page-name">${page.name}</div>
+      <div class="page-id">ID: ${page.id}</div>
+    `;
+    item.addEventListener('click', () => selectPage(page));
+    pageList.appendChild(item);
+  });
+  pageModal.classList.add('visible');
+}
+
+function hidePageModal() {
+  pageModal.classList.remove('visible');
+}
+
+async function selectPage(page) {
+  try {
+    await window.api.selectFacebookPage(page);
+    hidePageModal();
+    await initFacebook();
+    status.textContent = `Connected to ${page.name}`;
+    status.className = 'status success';
+  } catch (err) {
+    status.textContent = `Error: ${err.message}`;
+    status.className = 'status error';
+  }
 }
 
 function updateUsbStatus(state) {
@@ -109,9 +199,11 @@ convertBtn.addEventListener('click', async () => {
   selectBtn.disabled = true;
   outputFolderBtn.disabled = true;
   showCancelButton(true);
+  updatePostToFacebookButton();
 
   try {
     const outputPath = await window.api.convertVideo(selectedFile);
+    lastConvertedPath = outputPath;
     status.textContent = `Saved: ${outputPath}`;
     status.className = 'status success';
   } catch (err) {
@@ -123,6 +215,7 @@ convertBtn.addEventListener('click', async () => {
     selectBtn.disabled = false;
     outputFolderBtn.disabled = false;
     showCancelButton(false);
+    updatePostToFacebookButton();
   }
 });
 
@@ -230,6 +323,7 @@ window.api.onAutoConvertReady(async (filePath) => {
   outputFolderBtn.disabled = true;
   usbToggle.disabled = true;
   showCancelButton(true);
+  updatePostToFacebookButton();
 
   // Update file display to show the auto-detected file (remove temp_ prefix for cleaner display)
   selectedFile = filePath;
@@ -251,6 +345,7 @@ window.api.onAutoConvertReady(async (filePath) => {
 
   try {
     const outputPath = await window.api.convertVideo(filePath);
+    lastConvertedPath = outputPath;
     status.textContent = `Saved: ${outputPath}`;
     status.className = 'status success';
   } catch (err) {
@@ -263,7 +358,106 @@ window.api.onAutoConvertReady(async (filePath) => {
     outputFolderBtn.disabled = false;
     usbToggle.disabled = false;
     showCancelButton(false);
+    updatePostToFacebookButton();
   }
+});
+
+// Facebook event handlers
+facebookConnectBtn.addEventListener('click', async () => {
+  if (isFacebookConnected) {
+    // Disconnect
+    try {
+      await window.api.disconnectFacebook();
+      await initFacebook();
+      status.textContent = 'Disconnected from Facebook';
+      status.className = 'status';
+    } catch (err) {
+      status.textContent = `Error: ${err.message}`;
+      status.className = 'status error';
+    }
+  } else {
+    // Check if we have credentials
+    const fbStatus = await window.api.getFacebookStatus();
+    if (fbStatus.hasCredentials) {
+      // Start OAuth flow
+      startFacebookAuth();
+    } else {
+      // Show setup modal
+      showSetupModal();
+    }
+  }
+});
+
+setupCancelBtn.addEventListener('click', hideSetupModal);
+
+setupSaveBtn.addEventListener('click', async () => {
+  const appId = appIdInput.value.trim();
+  const appSecret = appSecretInput.value.trim();
+
+  if (!appId || !appSecret) {
+    status.textContent = 'Please enter both App ID and App Secret';
+    status.className = 'status error';
+    return;
+  }
+
+  try {
+    await window.api.saveFacebookCredentials({ appId, appSecret });
+    hideSetupModal();
+    startFacebookAuth();
+  } catch (err) {
+    status.textContent = `Error: ${err.message}`;
+    status.className = 'status error';
+  }
+});
+
+pageCancelBtn.addEventListener('click', hidePageModal);
+
+async function startFacebookAuth() {
+  facebookConnectBtn.disabled = true;
+  status.textContent = 'Opening browser for authorization...';
+  status.className = 'status';
+
+  try {
+    const pages = await window.api.startFacebookAuth();
+    showPageModal(pages);
+  } catch (err) {
+    status.textContent = `Error: ${err.message}`;
+    status.className = 'status error';
+  } finally {
+    facebookConnectBtn.disabled = false;
+  }
+}
+
+postToFacebookBtn.addEventListener('click', async () => {
+  if (!lastConvertedPath || !isFacebookConnected || isPostingToFacebook) return;
+
+  isPostingToFacebook = true;
+  postToFacebookBtn.disabled = true;
+  progressBar.style.width = '0%';
+
+  try {
+    const result = await window.api.postToFacebook(lastConvertedPath);
+    if (result.success) {
+      status.textContent = 'Video posted to Facebook!';
+      status.className = 'status success';
+    }
+  } catch (err) {
+    status.textContent = `Facebook upload failed: ${err.message}`;
+    status.className = 'status error';
+  } finally {
+    isPostingToFacebook = false;
+    updatePostToFacebookButton();
+  }
+});
+
+// Facebook progress and status listeners
+window.api.onFacebookUploadProgress((percent) => {
+  progressBar.style.width = `${percent}%`;
+});
+
+window.api.onFacebookStatus((message) => {
+  status.textContent = message;
+  status.className = 'status';
 });
 
 init();

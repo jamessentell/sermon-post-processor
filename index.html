@@ -267,6 +267,160 @@
     .usb-status.detected {
       color: #e94560;
     }
+
+    .facebook-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #0f3460;
+      border-radius: 8px;
+      padding: 12px 15px;
+      margin-bottom: 20px;
+    }
+
+    .facebook-status {
+      color: #888;
+      font-size: 0.9rem;
+    }
+
+    .facebook-status.connected {
+      color: #4ecca3;
+    }
+
+    .facebook-btn {
+      background: #1877f2;
+      color: #fff;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+    }
+
+    .facebook-btn:hover:not(:disabled) {
+      background: #166fe5;
+    }
+
+    .facebook-btn:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+
+    .facebook-btn.disconnect {
+      background: #555;
+    }
+
+    .facebook-btn.disconnect:hover {
+      background: #777;
+    }
+
+    #postToFacebookBtn {
+      width: 100%;
+      margin-bottom: 15px;
+      background: #1877f2;
+      color: #fff;
+    }
+
+    #postToFacebookBtn:hover:not(:disabled) {
+      background: #166fe5;
+    }
+
+    #postToFacebookBtn:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-overlay.visible {
+      display: flex;
+    }
+
+    .modal-content {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 30px;
+      width: 90%;
+      max-width: 400px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .modal-content h2 {
+      margin-bottom: 20px;
+      color: #eee;
+      font-size: 1.2rem;
+    }
+
+    .modal-content label {
+      display: block;
+      color: #888;
+      font-size: 0.8rem;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+    }
+
+    .modal-content input {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background: #0f3460;
+      color: #eee;
+      font-size: 0.9rem;
+      margin-bottom: 15px;
+    }
+
+    .modal-content input:focus {
+      outline: 2px solid #1877f2;
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .modal-buttons button {
+      flex: 1;
+    }
+
+    .page-list {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .page-item {
+      background: #0f3460;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .page-item:hover {
+      background: #1a4a7a;
+    }
+
+    .page-item .page-name {
+      color: #eee;
+      font-weight: 500;
+    }
+
+    .page-item .page-id {
+      color: #888;
+      font-size: 0.8rem;
+      margin-top: 5px;
+    }
   </style>
 </head>
 <body>
@@ -301,8 +455,49 @@
     <div class="progress-container">
       <div class="progress-bar" id="progressBar"></div>
     </div>
+
+    <div class="facebook-row">
+      <span class="facebook-status" id="facebookStatus">Not connected</span>
+      <button class="facebook-btn" id="facebookConnectBtn">Setup</button>
+    </div>
+
+    <button id="postToFacebookBtn" disabled>Post to Facebook</button>
+
     <div class="status" id="status">Select an output folder and video file to begin</div>
   </div>
+
+  <!-- Facebook Setup Modal -->
+  <div class="modal-overlay" id="setupModal">
+    <div class="modal-content">
+      <h2>Facebook App Setup</h2>
+      <label for="appIdInput">App ID</label>
+      <input type="text" id="appIdInput" placeholder="Enter your Facebook App ID">
+      <label for="appSecretInput">App Secret</label>
+      <input type="password" id="appSecretInput" placeholder="Enter your Facebook App Secret">
+      <p style="color: #888; font-size: 0.8rem; margin-bottom: 15px;">
+        Create an app at developers.facebook.com. Add http://localhost:8888/callback as a valid OAuth redirect URI.
+      </p>
+      <div class="modal-buttons">
+        <button class="facebook-btn disconnect" id="setupCancelBtn">Cancel</button>
+        <button class="facebook-btn" id="setupSaveBtn">Save & Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Page Selection Modal -->
+  <div class="modal-overlay" id="pageModal">
+    <div class="modal-content">
+      <h2>Select a Page</h2>
+      <p style="color: #888; font-size: 0.85rem; margin-bottom: 15px;">
+        Choose which Facebook Page to post sermons to:
+      </p>
+      <div class="page-list" id="pageList"></div>
+      <div class="modal-buttons">
+        <button class="facebook-btn disconnect" id="pageCancelBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -13,5 +13,14 @@ contextBridge.exposeInMainWorld('api', {
   getUsbMonitoringStatus: () => ipcRenderer.invoke('get-usb-monitoring-status'),
   onCameraDetected: (callback) => ipcRenderer.on('camera-detected', (event, data) => callback(data)),
   onCopyProgress: (callback) => ipcRenderer.on('copy-progress', (event, percent) => callback(percent)),
-  onAutoConvertReady: (callback) => ipcRenderer.on('auto-convert-ready', (event, filePath) => callback(filePath))
+  onAutoConvertReady: (callback) => ipcRenderer.on('auto-convert-ready', (event, filePath) => callback(filePath)),
+  // Facebook APIs
+  saveFacebookCredentials: (credentials) => ipcRenderer.invoke('save-facebook-credentials', credentials),
+  getFacebookStatus: () => ipcRenderer.invoke('get-facebook-status'),
+  startFacebookAuth: () => ipcRenderer.invoke('start-facebook-auth'),
+  selectFacebookPage: (pageInfo) => ipcRenderer.invoke('select-facebook-page', pageInfo),
+  disconnectFacebook: () => ipcRenderer.invoke('disconnect-facebook'),
+  postToFacebook: (videoPath) => ipcRenderer.invoke('post-to-facebook', videoPath),
+  onFacebookUploadProgress: (callback) => ipcRenderer.on('facebook-upload-progress', (event, percent) => callback(percent)),
+  onFacebookStatus: (callback) => ipcRenderer.on('facebook-status', (event, message) => callback(message))
 });
