@@ -31,6 +31,12 @@ function saveSettings(settings) {
   }
 }
 
+/**
+ * Create the main application BrowserWindow and initialize converter callbacks to forward events to the renderer.
+ *
+ * Sets the global `mainWindow` BrowserWindow, loads the app UI (index.html), and registers converter callbacks that
+ * forward `conversion-progress`, `conversion-status`, and `copy-progress` IPC messages to the renderer process.
+ */
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 600,
@@ -176,6 +182,11 @@ function checkForCameraDrive(mountPoints) {
   return null;
 }
 
+/**
+ * Find the most recently modified video file inside a camera CLIP directory.
+ * @param {string} clipPath - Filesystem path to the directory to scan for video files.
+ * @returns {string|null} The full path of the newest video file (extensions checked: .mp4, .mov, .avi, .mkv, .webm), or `null` if no matching file is found or an error occurs.
+ */
 function getLatestVideoFile(clipPath) {
   const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
   try {
@@ -193,6 +204,17 @@ function getLatestVideoFile(clipPath) {
   }
 }
 
+/**
+ * Copies a camera video to a temporary file in the configured output folder and triggers conversion.
+ *
+ * If no output folder is configured, sends an error status and returns. If the file has already been processed,
+ * sends a skipped status and returns. Otherwise copies the file to a temp path inside the output folder, reports
+ * copy progress and status via IPC, and signals the renderer with `auto-convert-ready` to start conversion. On copy
+ * errors (except a cancellation signaled by an error with message "Copy cancelled"), sends an error status and removes
+ * any created temporary file.
+ *
+ * @param {string} sourcePath - Absolute path to the source video file on the camera.
+ */
 async function copyAndConvert(sourcePath) {
   const settings = loadSettings();
   const outputFolder = settings.outputFolder;

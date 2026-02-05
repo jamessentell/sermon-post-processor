@@ -15,7 +15,11 @@ let onStatus = null;
 let onCopyProgress = null;
 
 /**
- * Initialize the converter with event callbacks
+ * Configure callback hooks for progress and status notifications.
+ * @param {{onProgress?: function(number):void, onStatus?: function(string):void, onCopyProgress?: function(number):void}} callbacks - Callback functions to receive updates.
+ * @param {function(number):void} [callbacks.onProgress] - Called with a number 0–100 to report conversion progress percentage.
+ * @param {function(string):void} [callbacks.onStatus] - Called with a human-readable status message.
+ * @param {function(number):void} [callbacks.onCopyProgress] - Called with a number 0–100 to report file copy progress percentage.
  */
 function init(callbacks) {
   onProgress = callbacks.onProgress || (() => {});
@@ -24,10 +28,12 @@ function init(callbacks) {
 }
 
 /**
- * Convert a video file to 1080p
- * @param {string} inputPath - Path to input video file
- * @param {string} outputFolder - Base output folder
- * @returns {Promise<string>} - Path to converted file
+ * Convert the given video to 1080p and save it into a date-based subfolder under the specified output folder.
+ *
+ * Creates a YYYY-MM-DD subfolder inside outputFolder, derives an output filename by removing a leading `temp_` prefix (if present) and appending `_1080p` before the original extension, runs ffmpeg to produce the 1080p file, reports progress/status via module callbacks, and resolves with the final output path when complete.
+ * @param {string} inputPath - Path to the input video file.
+ * @param {string} outputFolder - Base output folder where a date-based subfolder (YYYY-MM-DD) will be created to store the converted file.
+ * @returns {Promise<string>} Path to the converted file.
  */
 function convertVideo(inputPath, outputFolder) {
   if (!outputFolder) {
@@ -108,10 +114,13 @@ function convertVideo(inputPath, outputFolder) {
 }
 
 /**
- * Copy a file with progress reporting
- * @param {string} sourcePath - Source file path
- * @param {string} destPath - Destination file path
- * @returns {Promise<void>}
+ * Copy a file to a destination while reporting progress.
+ *
+ * Reports percentage progress through the module's `onCopyProgress` callback and stores active streams in `currentCopyStreams` so the operation can be cancelled.
+ * Resolves when the copy finishes successfully. Rejects with the underlying stream error if a read/write error occurs, or rejects with `Error('Copy cancelled')` if the copy is cancelled.
+ * @param {string} sourcePath - Path to the source file to copy.
+ * @param {string} destPath - Path where the file will be written.
+ * @returns {Promise<void>} Resolves when the copy completes; rejects on stream error or when cancelled.
  */
 function copyFile(sourcePath, destPath) {
   return new Promise((resolve, reject) => {
@@ -164,8 +173,8 @@ function copyFile(sourcePath, destPath) {
 }
 
 /**
- * Cancel any ongoing conversion or copy operation
- * @returns {{ wasCopying: boolean }} - Info about what was cancelled
+ * Cancel any ongoing copy or conversion operation and remove partial files.
+ * @returns {{ wasCopying: boolean }} `wasCopying` is `true` if a file copy was cancelled, `false` otherwise.
  */
 function cancel() {
   let wasCopying = false;
@@ -225,10 +234,11 @@ function cancel() {
 }
 
 /**
- * Check if the output file already exists for a given source
- * @param {string} sourcePath - Source file path
- * @param {string} outputFolder - Output folder path
- * @returns {boolean}
+ * Determine whether the 1080p output for a source file already exists in the date-based subfolder.
+ * The date subfolder is derived from the source file's modification time (YYYY-MM-DD).
+ * @param {string} sourcePath - Path to the source file whose modification date determines the date subfolder.
+ * @param {string} outputFolder - Base output folder containing date-named subfolders.
+ * @returns {boolean} `true` if the expected `<basename>_1080p<ext>` file exists in the date subfolder, `false` otherwise.
  */
 function outputExists(sourcePath, outputFolder) {
   if (!outputFolder) return false;
@@ -246,8 +256,8 @@ function outputExists(sourcePath, outputFolder) {
 }
 
 /**
- * Check if a copy operation is in progress
- * @returns {boolean}
+ * Determine whether a file copy operation is currently active.
+ * @returns {boolean} `true` if a copy is in progress, `false` otherwise.
  */
 function isCopying() {
   return currentCopyStreams !== null;
