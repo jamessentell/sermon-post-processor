@@ -82,3 +82,18 @@ export interface CopyStreams {
   writeStream: NodeJS.WritableStream & { destroy: () => void };
   destPath: string;
 }
+
+export type VideoStatus = 'on-camera' | 'copied' | 'converted';
+
+export interface VideoRecord {
+  id?: number;
+  source_name: string;
+  source_path: string;
+  source_size: number;
+  source_mtime: number;
+  copied_path?: string | null;
+  converted_path?: string | null;
+  status: VideoStatus;
+  created_at?: string;
+  updated_at?: string;
+}

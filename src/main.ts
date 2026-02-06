@@ -5,7 +5,8 @@ import { execSync } from 'child_process';
 import * as converter from './converter';
 import * as facebook from './facebook';
 import * as authServer from './auth-server';
-import { Settings, FacebookPage, CameraDetectionData } from './types';
+import * as db from './database';
+import { FacebookPage, FacebookSettings, CameraDetectionData } from './types';
 
 let mainWindow: BrowserWindow | null = null;
 let usbMonitoringInterval: ReturnType<typeof setInterval> | null = null;
@@ -13,27 +14,6 @@ let driveMonitoringInterval: ReturnType<typeof setInterval> | null = null;
 let knownMountPoints = new Set<string>();
 let isProcessingCamera = false;
 
-// Settings file path
-const settingsPath = path.join(app.getPath('userData'), 'settings.json');
-
-function loadSettings(): Settings {
-  try {
-    if (fs.existsSync(settingsPath)) {
-      return JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    }
-  } catch (err) {
-    console.error('Failed to load settings:', err);
-  }
-  return {};
-}
-
-function saveSettings(settings: Settings): void {
-  try {
-    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-  } catch (err) {
-    console.error('Failed to save settings:', err);
-  }
-}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -89,10 +69,9 @@ ipcMain.handle('select-file', async () => {
 
 // Handle output folder selection
 ipcMain.handle('select-output-folder', async () => {
-  const settings = loadSettings();
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ['openDirectory'],
-    defaultPath: settings.outputFolder
+    defaultPath: db.getSetting<string>('outputFolder')
   });
 
   if (result.canceled || result.filePaths.length === 0) {
@@ -100,21 +79,42 @@ ipcMain.handle('select-output-folder', async () => {
   }
 
   const folderPath = result.filePaths[0];
-  settings.outputFolder = folderPath;
-  saveSettings(settings);
+  db.setSetting('outputFolder', folderPath);
   return folderPath;
 });
 
 // Get saved output folder
 ipcMain.handle('get-output-folder', async () => {
-  const settings = loadSettings();
-  return settings.outputFolder || null;
+  return db.getSetting<string>('outputFolder') || null;
 });
 
 // Handle video conversion
 ipcMain.handle('convert-video', async (_event: IpcMainInvokeEvent, inputPath: string) => {
-  const settings = loadSettings();
-  return converter.convertVideo(inputPath, settings.outputFolder!);
+  const outputFolder = db.getSetting<string>('outputFolder');
+  const outputPath = await converter.convertVideo(inputPath, outputFolder!);
+
+  // Update video status in database
+  const basename = path.basename(inputPath);
+  if (basename.startsWith('temp_')) {
+    // Look up by copied path for auto-detected camera files
+    const record = db.getVideoByCopiedPath(inputPath);
+    if (record) {
+      db.updateVideoStatus(record.id!, 'converted', { converted: outputPath });
+    }
+  } else {
+    // Manual conversion — try to find by source name/size
+    try {
+      const stats = fs.statSync(inputPath);
+      const record = db.getVideoBySource(basename, stats.size);
+      if (record) {
+        db.updateVideoStatus(record.id!, 'converted', { converted: outputPath });
+      }
+    } catch {
+      // File may not be on camera, that's fine
+    }
+  }
+
+  return outputPath;
 });
 
 // Handle conversion/copy cancellation
@@ -194,23 +194,34 @@ function getLatestVideoFile(clipPath: string): string | null {
 }
 
 async function copyAndConvert(sourcePath: string): Promise<void> {
-  const settings = loadSettings();
-  const outputFolder = settings.outputFolder;
+  const outputFolder = db.getSetting<string>('outputFolder');
 
   if (!outputFolder) {
     mainWindow!.webContents.send('conversion-status', 'Error: No output folder configured');
     return;
   }
 
-  // Check if already processed
-  if (converter.outputExists(sourcePath, outputFolder)) {
+  // Check if already processed via database
+  const sourceName = path.basename(sourcePath);
+  const sourceStats = fs.statSync(sourcePath);
+  const existing = db.getVideoBySource(sourceName, sourceStats.size);
+  if (existing && existing.status === 'converted') {
     mainWindow!.webContents.send('conversion-status', 'File already processed, skipping');
-    mainWindow!.webContents.send('camera-detected', { status: 'skipped', file: path.basename(sourcePath) } as CameraDetectionData);
+    mainWindow!.webContents.send('camera-detected', { status: 'skipped', file: sourceName } as CameraDetectionData);
     return;
   }
 
+  // Upsert video record
+  const videoId = db.upsertVideo({
+    source_name: sourceName,
+    source_path: sourcePath,
+    source_size: sourceStats.size,
+    source_mtime: sourceStats.mtime.getTime(),
+    status: 'on-camera'
+  });
+
   // Create temp copy path
-  const tempPath = path.join(outputFolder, `temp_${path.basename(sourcePath)}`);
+  const tempPath = path.join(outputFolder, `temp_${sourceName}`);
 
   try {
     // Copy file
@@ -218,6 +229,9 @@ async function copyAndConvert(sourcePath: string): Promise<void> {
     await converter.copyFile(sourcePath, tempPath);
     mainWindow!.webContents.send('copy-progress', 100);
     mainWindow!.webContents.send('conversion-status', 'Copy complete, starting conversion...');
+
+    // Update status to copied
+    db.updateVideoStatus(videoId, 'copied', { copied: tempPath });
 
     // Trigger conversion via the existing convert-video handler logic
     mainWindow!.webContents.send('auto-convert-ready', tempPath);
@@ -298,9 +312,7 @@ function stopUsbMonitoring(): void {
 
 // USB Monitoring IPC Handlers
 ipcMain.handle('toggle-usb-monitoring', async (_event: IpcMainInvokeEvent, enabled: boolean) => {
-  const settings = loadSettings();
-  settings.usbMonitoringEnabled = enabled;
-  saveSettings(settings);
+  db.setSetting('usbMonitoringEnabled', enabled);
 
   if (enabled) {
     startUsbMonitoring();
@@ -311,9 +323,8 @@ ipcMain.handle('toggle-usb-monitoring', async (_event: IpcMainInvokeEvent, enabl
 });
 
 ipcMain.handle('get-usb-monitoring-status', async () => {
-  const settings = loadSettings();
   return {
-    enabled: settings.usbMonitoringEnabled || false,
+    enabled: db.getSetting<boolean>('usbMonitoringEnabled') || false,
     active: usbMonitoringInterval !== null
   };
 });
@@ -338,6 +349,9 @@ let previousDriveConnected = false;
 
 // Start monitoring on app ready if enabled in settings
 app.on('ready', () => {
+  // Initialize database
+  db.initDatabase(app.getPath('userData'));
+
   // Initialize drive connection status
   const mountPoints = getMountPoints();
   const clipPath = checkForCameraDrive(mountPoints);
@@ -346,8 +360,7 @@ app.on('ready', () => {
   // Always start drive monitoring for video list updates
   startDriveMonitoring();
 
-  const settings = loadSettings();
-  if (settings.usbMonitoringEnabled) {
+  if (db.getSetting<boolean>('usbMonitoringEnabled')) {
     startUsbMonitoring();
   }
 });
@@ -362,37 +375,34 @@ app.on('before-quit', () => {
 const REDIRECT_URI = 'http://localhost:8888/callback';
 
 ipcMain.handle('save-facebook-credentials', async (_event: IpcMainInvokeEvent, credentials: { appId: string; appSecret: string }) => {
-  const settings = loadSettings();
-  if (!settings.facebook) {
-    settings.facebook = {};
-  }
-  settings.facebook.appId = credentials.appId;
-  settings.facebook.appSecret = credentials.appSecret;
-  saveSettings(settings);
+  const fbSettings = db.getSetting<FacebookSettings>('facebook') || {};
+  fbSettings.appId = credentials.appId;
+  fbSettings.appSecret = credentials.appSecret;
+  db.setSetting('facebook', fbSettings);
   return true;
 });
 
 ipcMain.handle('get-facebook-status', async () => {
-  const settings = loadSettings();
-  if (settings.facebook && settings.facebook.pageAccessToken && settings.facebook.pageName) {
+  const fbSettings = db.getSetting<FacebookSettings>('facebook');
+  if (fbSettings && fbSettings.pageAccessToken && fbSettings.pageName) {
     return {
       connected: true,
-      pageName: settings.facebook.pageName
+      pageName: fbSettings.pageName
     };
   }
   return {
     connected: false,
-    hasCredentials: !!(settings.facebook && settings.facebook.appId && settings.facebook.appSecret)
+    hasCredentials: !!(fbSettings && fbSettings.appId && fbSettings.appSecret)
   };
 });
 
 ipcMain.handle('start-facebook-auth', async () => {
-  const settings = loadSettings();
-  if (!settings.facebook || !settings.facebook.appId || !settings.facebook.appSecret) {
+  const fbSettings = db.getSetting<FacebookSettings>('facebook');
+  if (!fbSettings || !fbSettings.appId || !fbSettings.appSecret) {
     throw new Error('Facebook App credentials not configured');
   }
 
-  const { appId, appSecret } = settings.facebook;
+  const { appId, appSecret } = fbSettings;
 
   // Start local server to receive OAuth callback
   const authPromise = authServer.startAuthServer(8888, 300000);
@@ -429,35 +439,32 @@ ipcMain.handle('start-facebook-auth', async () => {
 });
 
 ipcMain.handle('select-facebook-page', async (_event: IpcMainInvokeEvent, pageInfo: FacebookPage) => {
-  const settings = loadSettings();
-  if (!settings.facebook) {
-    settings.facebook = {};
-  }
-  settings.facebook.pageId = pageInfo.id;
-  settings.facebook.pageName = pageInfo.name;
-  settings.facebook.pageAccessToken = pageInfo.access_token;
-  saveSettings(settings);
+  const fbSettings = db.getSetting<FacebookSettings>('facebook') || {};
+  fbSettings.pageId = pageInfo.id;
+  fbSettings.pageName = pageInfo.name;
+  fbSettings.pageAccessToken = pageInfo.access_token;
+  db.setSetting('facebook', fbSettings);
   return true;
 });
 
 ipcMain.handle('disconnect-facebook', async () => {
-  const settings = loadSettings();
-  if (settings.facebook) {
-    delete settings.facebook.pageId;
-    delete settings.facebook.pageName;
-    delete settings.facebook.pageAccessToken;
+  const fbSettings = db.getSetting<FacebookSettings>('facebook');
+  if (fbSettings) {
+    delete fbSettings.pageId;
+    delete fbSettings.pageName;
+    delete fbSettings.pageAccessToken;
+    db.setSetting('facebook', fbSettings);
   }
-  saveSettings(settings);
   return true;
 });
 
 ipcMain.handle('post-to-facebook', async (_event: IpcMainInvokeEvent, videoPath: string) => {
-  const settings = loadSettings();
-  if (!settings.facebook || !settings.facebook.pageAccessToken) {
+  const fbSettings = db.getSetting<FacebookSettings>('facebook');
+  if (!fbSettings || !fbSettings.pageAccessToken) {
     throw new Error('Facebook not connected');
   }
 
-  const { pageId, pageAccessToken } = settings.facebook;
+  const { pageId, pageAccessToken } = fbSettings;
 
   try {
     const result = await facebook.uploadVideoToPage(
@@ -486,9 +493,6 @@ ipcMain.handle('list-video-files', async () => {
     return { connected: false, files: [] };
   }
 
-  const settings = loadSettings();
-  const outputFolder = settings.outputFolder;
-
   try {
     const files = fs.readdirSync(clipPath)
       .filter(f => videoExtensions.includes(path.extname(f).toLowerCase()))
@@ -496,18 +500,20 @@ ipcMain.handle('list-video-files', async () => {
         const fullPath = path.join(clipPath, f);
         const stats = fs.statSync(fullPath);
 
-        // Determine copy/convert status
+        // Look up status from database
+        const record = db.getVideoBySource(f, stats.size);
         let status: 'on-camera' | 'copied' | 'converted' = 'on-camera';
-        if (outputFolder) {
-          if (converter.outputExists(fullPath, outputFolder)) {
-            status = 'converted';
-          } else {
-            const tempFilePath = path.join(outputFolder, `temp_${f}`);
-            const copiedPath = path.join(outputFolder, f);
-            if (fs.existsSync(tempFilePath) || fs.existsSync(copiedPath)) {
-              status = 'copied';
-            }
-          }
+        if (record) {
+          status = record.status;
+        } else {
+          // First time seeing this file — insert as on-camera
+          db.upsertVideo({
+            source_name: f,
+            source_path: fullPath,
+            source_size: stats.size,
+            source_mtime: stats.mtime.getTime(),
+            status: 'on-camera'
+          });
         }
 
         return {
@@ -537,41 +543,23 @@ ipcMain.handle('get-drive-status', async () => {
 });
 
 ipcMain.handle('list-converted-videos', async () => {
-  const settings = loadSettings();
-  const outputFolder = settings.outputFolder;
-
-  if (!outputFolder || !fs.existsSync(outputFolder)) {
-    return { files: [] };
-  }
-
-  const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
-  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-
   try {
+    const convertedRecords = db.getVideosByStatus('converted');
     const files: Array<{ name: string; path: string; size: number; mtime: number; folder: string }> = [];
 
-    // Scan date-named subfolders for converted (_1080p) videos
-    const entries = fs.readdirSync(outputFolder, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory() && datePattern.test(entry.name)) {
-        const subfolderPath = path.join(outputFolder, entry.name);
-        const subFiles = fs.readdirSync(subfolderPath);
-        for (const f of subFiles) {
-          const ext = path.extname(f).toLowerCase();
-          const baseName = path.basename(f, ext);
-          if (videoExtensions.includes(ext) && baseName.endsWith('_1080p')) {
-            const fullPath = path.join(subfolderPath, f);
-            const stats = fs.statSync(fullPath);
-            files.push({
-              name: f,
-              path: fullPath,
-              size: stats.size,
-              mtime: stats.mtime.getTime(),
-              folder: entry.name
-            });
-          }
-        }
+    for (const record of convertedRecords) {
+      if (!record.converted_path || !fs.existsSync(record.converted_path)) {
+        continue;
       }
+      const stats = fs.statSync(record.converted_path);
+      const folder = path.basename(path.dirname(record.converted_path));
+      files.push({
+        name: path.basename(record.converted_path),
+        path: record.converted_path,
+        size: stats.size,
+        mtime: stats.mtime.getTime(),
+        folder
+      });
     }
 
     files.sort((a, b) => b.mtime - a.mtime);

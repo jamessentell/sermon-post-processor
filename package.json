@@ -6,15 +6,19 @@
   "scripts": {
     "build": "tsc && node esbuild.config.mjs && cp index.html dist/index.html",
     "build:renderer": "node esbuild.config.mjs",
-    "start": "npm run build && electron . --no-sandbox"
+    "start": "npm run build && electron . --no-sandbox",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
     "axios": "^1.13.4",
+    "better-sqlite3": "^12.6.2",
     "electron": "^28.0.0",
     "fluent-ffmpeg": "^2.1.2",
     "form-data": "^4.0.5"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/fluent-ffmpeg": "^2.1.28",
     "@types/node": "^25.2.1",
     "esbuild": "^0.27.3",

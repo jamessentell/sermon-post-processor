@@ -232,26 +232,6 @@ export function cancel(): { wasCopying: boolean } {
   return { wasCopying };
 }
 
-export function outputExists(sourcePath: string, outputFolder: string): boolean {
-  if (!outputFolder) return false;
-
-  let stats: fs.Stats;
-  try {
-    stats = fs.statSync(sourcePath);
-  } catch (_err) {
-    return false;
-  }
-
-  const fileDate = stats.mtime;
-  const dateFolderName = fileDate.toISOString().split('T')[0];
-  const dateFolder = path.join(outputFolder, dateFolderName);
-
-  const ext = path.extname(sourcePath);
-  const basename = path.basename(sourcePath, ext);
-  const outputPath = path.join(dateFolder, `${basename}_1080p${ext}`);
-
-  return fs.existsSync(outputPath);
-}
 
 export function isCopying(): boolean {
   return currentCopyStreams !== null;
