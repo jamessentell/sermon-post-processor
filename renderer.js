@@ -46,6 +46,8 @@ let currentPage = 'home';
 let cameraVideos = [];
 let convertedVideos = [];
 let connectedDrivePath = null;
+let isDriveConnected = false;
+let isUsbMonitoringEnabled = false;
 
 function showCancelButton(show) {
   if (show) {
@@ -292,6 +294,8 @@ function selectVideoFromList(video, type) {
 // Drive connection change listener
 window.api.onDriveConnectionChanged((data) => {
   connectedDrivePath = data.clipPath;
+  isDriveConnected = data.connected;
+  updateUsbIndicator();
   refreshCameraVideos();
 });
 
@@ -308,7 +312,13 @@ async function init() {
   // Load USB monitoring status
   const usbMonitoring = await window.api.getUsbMonitoringStatus();
   usbToggle.checked = usbMonitoring.enabled;
-  updateUsbStatus(usbMonitoring.active ? 'monitoring' : null);
+  isUsbMonitoringEnabled = usbMonitoring.enabled;
+
+  // Load initial drive connection status
+  const driveStatus = await window.api.getDriveStatus();
+  isDriveConnected = driveStatus.connected;
+  connectedDrivePath = driveStatus.clipPath || null;
+  updateUsbIndicator();
 
   // Load Facebook status
   await initFacebook();
@@ -386,23 +396,30 @@ async function selectPage(page) {
   }
 }
 
-function updateUsbStatus(state) {
-  usbIndicator.classList.remove('active', 'detected');
-  switch (state) {
-    case 'monitoring':
-      usbStatus.textContent = 'Monitoring for USB';
-      usbIndicator.classList.add('active');
-      break;
-    case 'detected':
-      usbStatus.textContent = 'Camera detected!';
-      usbIndicator.classList.add('detected');
-      break;
-    case 'copying':
-      usbStatus.textContent = 'Copying from camera...';
-      usbIndicator.classList.add('detected');
-      break;
-    default:
-      usbStatus.textContent = 'USB Monitoring Off';
+function updateUsbIndicator(override) {
+  usbIndicator.classList.remove('active', 'detected', 'connected');
+
+  // Transient states from camera auto-detect flow
+  if (override === 'detected') {
+    usbStatus.textContent = 'Camera detected!';
+    usbIndicator.classList.add('detected');
+    return;
+  }
+  if (override === 'copying') {
+    usbStatus.textContent = 'Copying from camera...';
+    usbIndicator.classList.add('detected');
+    return;
+  }
+
+  // Steady states derived from connection + monitoring
+  if (isDriveConnected) {
+    usbStatus.textContent = 'USB Connected';
+    usbIndicator.classList.add('connected');
+  } else if (isUsbMonitoringEnabled) {
+    usbStatus.textContent = 'Monitoring for USB';
+    usbIndicator.classList.add('active');
+  } else {
+    usbStatus.textContent = 'USB Not Connected';
   }
 }
 
@@ -489,10 +506,8 @@ cancelBtn.addEventListener('click', async () => {
     setProgressState(null);
     progressBar.style.width = '0%';
     statusMeta.textContent = '';
-    // Reset USB status if monitoring is enabled
-    if (usbToggle.checked) {
-      updateUsbStatus('monitoring');
-    }
+    // Reset USB indicator
+    updateUsbIndicator();
     // Reset selection
     selectedFile = null;
     // Deselect any selected video items
@@ -521,15 +536,16 @@ window.api.onStatus((message) => {
 // USB monitoring toggle
 usbToggle.addEventListener('change', async () => {
   const enabled = usbToggle.checked;
+  isUsbMonitoringEnabled = enabled;
   await window.api.toggleUsbMonitoring(enabled);
-  updateUsbStatus(enabled ? 'monitoring' : null);
+  updateUsbIndicator();
 });
 
 // Camera detection events
 window.api.onCameraDetected((data) => {
   switch (data.status) {
     case 'detected':
-      updateUsbStatus('detected');
+      updateUsbIndicator('detected');
       status.textContent = 'Camera detected, searching for videos...';
       setStatusState('working');
       // Disable UI when camera is detected
@@ -538,7 +554,7 @@ window.api.onCameraDetected((data) => {
       usbToggle.disabled = true;
       break;
     case 'found-video':
-      updateUsbStatus('copying');
+      updateUsbIndicator('copying');
       status.textContent = `Found: ${data.file}`;
       setStatusState('working');
       setProgressState('active');
@@ -547,7 +563,7 @@ window.api.onCameraDetected((data) => {
       isConverting = true; // Treat copy as part of conversion process
       break;
     case 'skipped':
-      updateUsbStatus('monitoring');
+      updateUsbIndicator();
       status.textContent = `${data.file} already processed, skipping`;
       setStatusState('success');
       // Re-enable UI
@@ -570,7 +586,7 @@ window.api.onCopyProgress((percent) => {
 
 // Auto-convert after copy completes
 window.api.onAutoConvertReady(async (filePath) => {
-  updateUsbStatus('monitoring');
+  updateUsbIndicator();
   isConverting = true;
   convertBtn.disabled = true;
   outputFolderBtn.disabled = true;
