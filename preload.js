@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld('api', {
   onCameraDetected: (callback) => ipcRenderer.on('camera-detected', (event, data) => callback(data)),
   onCopyProgress: (callback) => ipcRenderer.on('copy-progress', (event, percent) => callback(percent)),
   onAutoConvertReady: (callback) => ipcRenderer.on('auto-convert-ready', (event, filePath) => callback(filePath)),
+  // Video List APIs
+  listVideoFiles: () => ipcRenderer.invoke('list-video-files'),
+  listConvertedVideos: () => ipcRenderer.invoke('list-converted-videos'),
+  getDriveStatus: () => ipcRenderer.invoke('get-drive-status'),
+  onDriveConnectionChanged: (callback) => ipcRenderer.on('drive-connection-changed', (event, data) => callback(data)),
   // Facebook APIs
   saveFacebookCredentials: (credentials) => ipcRenderer.invoke('save-facebook-credentials', credentials),
   getFacebookStatus: () => ipcRenderer.invoke('get-facebook-status'),

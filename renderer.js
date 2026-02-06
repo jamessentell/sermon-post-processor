@@ -1,8 +1,6 @@
-const selectBtn = document.getElementById('selectBtn');
 const convertBtn = document.getElementById('convertBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 const outputFolderBtn = document.getElementById('outputFolderBtn');
-const fileDisplay = document.getElementById('fileDisplay');
 const folderDisplay = document.getElementById('folderDisplay');
 const progressBar = document.getElementById('progressBar');
 const status = document.getElementById('status');
@@ -10,6 +8,17 @@ const statusMeta = document.getElementById('statusMeta');
 const usbToggle = document.getElementById('usbToggle');
 const usbIndicator = document.getElementById('usbIndicator');
 const usbStatus = document.getElementById('usbStatus');
+
+// Page elements
+const navItems = document.querySelectorAll('.nav-item');
+const homePage = document.getElementById('homePage');
+const settingsPage = document.getElementById('settingsPage');
+
+// Video list elements
+const cameraVideoList = document.getElementById('cameraVideoList');
+const convertedVideoList = document.getElementById('convertedVideoList');
+const cameraEmptyState = document.getElementById('cameraEmptyState');
+const convertedEmptyState = document.getElementById('convertedEmptyState');
 
 // Facebook elements
 const facebookStatusContainer = document.getElementById('facebookStatusContainer');
@@ -31,6 +40,12 @@ let isConverting = false;
 let lastConvertedPath = null;
 let isPostingToFacebook = false;
 let isFacebookConnected = false;
+
+// Page and video list state
+let currentPage = 'home';
+let cameraVideos = [];
+let convertedVideos = [];
+let connectedDrivePath = null;
 
 function showCancelButton(show) {
   if (show) {
@@ -54,6 +69,232 @@ function setStatusState(state) {
   }
 }
 
+// Page navigation
+function switchToPage(pageName) {
+  currentPage = pageName;
+
+  // Update nav items
+  navItems.forEach(item => {
+    if (item.dataset.page === pageName) {
+      item.classList.add('active');
+    } else {
+      item.classList.remove('active');
+    }
+  });
+
+  // Show/hide pages
+  if (pageName === 'home') {
+    homePage.classList.remove('hidden');
+    settingsPage.classList.add('hidden');
+  } else if (pageName === 'settings') {
+    homePage.classList.add('hidden');
+    settingsPage.classList.remove('hidden');
+  }
+}
+
+// Nav click handlers
+navItems.forEach(item => {
+  item.addEventListener('click', () => {
+    switchToPage(item.dataset.page);
+  });
+});
+
+
+// Helper functions for formatting
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function formatDate(timestamp) {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) {
+    return 'Today ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (diffDays === 1) {
+    return 'Yesterday ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' +
+           date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+}
+
+// Video list functions
+async function refreshCameraVideos() {
+  try {
+    const result = await window.api.listVideoFiles();
+    cameraVideos = result.files || [];
+    connectedDrivePath = result.clipPath || null;
+    renderCameraVideoList();
+  } catch (err) {
+    console.error('Error refreshing camera videos:', err);
+    showCameraEmptyState('Error loading videos');
+  }
+}
+
+async function refreshConvertedVideos() {
+  try {
+    const result = await window.api.listConvertedVideos();
+    convertedVideos = result.files || [];
+    renderConvertedVideoList();
+  } catch (err) {
+    console.error('Error refreshing converted videos:', err);
+    showConvertedEmptyState('Error loading videos');
+  }
+}
+
+async function refreshAllVideos() {
+  await Promise.all([refreshCameraVideos(), refreshConvertedVideos()]);
+}
+
+function renderCameraVideoList() {
+  // Clear existing items (except empty state)
+  const existingItems = cameraVideoList.querySelectorAll('.video-item');
+  existingItems.forEach(item => item.remove());
+
+  if (cameraVideos.length === 0) {
+    showCameraEmptyState();
+    return;
+  }
+
+  // Hide empty state
+  cameraEmptyState.style.display = 'none';
+
+  // Render video items
+  cameraVideos.forEach(video => {
+    const item = createVideoItem(video, 'camera');
+    cameraVideoList.appendChild(item);
+  });
+}
+
+function renderConvertedVideoList() {
+  // Clear existing items (except empty state)
+  const existingItems = convertedVideoList.querySelectorAll('.video-item');
+  existingItems.forEach(item => item.remove());
+
+  if (convertedVideos.length === 0) {
+    showConvertedEmptyState();
+    return;
+  }
+
+  // Hide empty state
+  convertedEmptyState.style.display = 'none';
+
+  // Render video items
+  convertedVideos.forEach(video => {
+    const item = createVideoItem(video, 'converted');
+    convertedVideoList.appendChild(item);
+  });
+}
+
+function createVideoItem(video, type) {
+  const item = document.createElement('div');
+  item.className = 'video-item';
+  if (selectedFile === video.path) {
+    item.classList.add('selected');
+  }
+  item.dataset.path = video.path;
+  item.dataset.type = type;
+
+  let badgeHtml = '';
+  if (type === 'camera' && video.status === 'copied') {
+    badgeHtml = '<span class="video-status-badge copied">Copied</span>';
+  } else if (type === 'camera' && video.status === 'converted') {
+    badgeHtml = '<span class="video-status-badge converted">Converted</span>';
+  }
+
+  let metaText = `${formatFileSize(video.size)} • ${formatDate(video.mtime)}`;
+  if (type === 'converted' && video.folder) {
+    metaText = `${video.folder} • ${formatFileSize(video.size)}`;
+  }
+
+  item.innerHTML = `
+    <span class="video-icon">${type === 'camera' ? '&#127909;' : '&#127916;'}</span>
+    <div class="video-item-info">
+      <div class="video-item-name">${video.name}</div>
+      <div class="video-item-meta">${metaText}</div>
+    </div>
+    ${badgeHtml}
+  `;
+  item.addEventListener('click', () => selectVideoFromList(video, type));
+  return item;
+}
+
+function showCameraEmptyState(message) {
+  // Remove video items
+  const existingItems = cameraVideoList.querySelectorAll('.video-item');
+  existingItems.forEach(item => item.remove());
+
+  // Show empty state
+  cameraEmptyState.style.display = 'flex';
+
+  if (message) {
+    cameraEmptyState.querySelector('.empty-title').textContent = message;
+  } else {
+    cameraEmptyState.querySelector('.empty-title').textContent = 'No camera connected';
+    cameraEmptyState.querySelector('.empty-description').textContent =
+      'Connect your camera via USB to see available video files.';
+  }
+}
+
+function showConvertedEmptyState(message) {
+  // Remove video items
+  const existingItems = convertedVideoList.querySelectorAll('.video-item');
+  existingItems.forEach(item => item.remove());
+
+  // Show empty state
+  convertedEmptyState.style.display = 'flex';
+
+  if (message) {
+    convertedEmptyState.querySelector('.empty-title').textContent = message;
+  } else {
+    convertedEmptyState.querySelector('.empty-title').textContent = 'No converted videos';
+    convertedEmptyState.querySelector('.empty-description').textContent =
+      'Converted videos will appear here after processing.';
+  }
+}
+
+function selectVideoFromList(video, type) {
+  selectedFile = video.path;
+  progressBar.style.width = '0%';
+  setProgressState(null);
+
+  // Update button states based on video type
+  if (type === 'camera') {
+    lastConvertedPath = null;
+    updateConvertButton();
+    updatePostToFacebookButton();
+  } else {
+    // Converted videos can be posted but not converted again
+    lastConvertedPath = video.path;
+    convertBtn.disabled = true;
+    updatePostToFacebookButton();
+  }
+
+  updateStatus();
+
+  // Update selected state in both lists
+  const allItems = document.querySelectorAll('.video-item');
+  allItems.forEach(item => {
+    if (item.dataset.path === video.path) {
+      item.classList.add('selected');
+    } else {
+      item.classList.remove('selected');
+    }
+  });
+}
+
+// Drive connection change listener
+window.api.onDriveConnectionChanged((data) => {
+  connectedDrivePath = data.clipPath;
+  refreshCameraVideos();
+});
+
 // Load saved output folder and USB monitoring status on startup
 async function init() {
   const savedFolder = await window.api.getOutputFolder();
@@ -71,6 +312,9 @@ async function init() {
 
   // Load Facebook status
   await initFacebook();
+
+  // Load video lists
+  await refreshAllVideos();
 }
 
 async function initFacebook() {
@@ -192,27 +436,11 @@ outputFolderBtn.addEventListener('click', async () => {
   }
 });
 
-selectBtn.addEventListener('click', async () => {
-  if (isConverting) return;
-
-  const filePath = await window.api.selectFile();
-  if (filePath) {
-    selectedFile = filePath;
-    fileDisplay.textContent = filePath;
-    fileDisplay.classList.add('has-value');
-    progressBar.style.width = '0%';
-    setProgressState(null);
-    updateConvertButton();
-    updateStatus();
-  }
-});
-
 convertBtn.addEventListener('click', async () => {
   if (!selectedFile || !outputFolder || isConverting) return;
 
   isConverting = true;
   convertBtn.disabled = true;
-  selectBtn.disabled = true;
   outputFolderBtn.disabled = true;
   showCancelButton(true);
   updatePostToFacebookButton();
@@ -232,10 +460,11 @@ convertBtn.addEventListener('click', async () => {
   } finally {
     isConverting = false;
     updateConvertButton();
-    selectBtn.disabled = false;
     outputFolderBtn.disabled = false;
     showCancelButton(false);
     updatePostToFacebookButton();
+    // Refresh converted videos list after conversion
+    refreshConvertedVideos();
   }
 });
 
@@ -254,7 +483,6 @@ cancelBtn.addEventListener('click', async () => {
     cancelBtn.disabled = false;
     isConverting = false;
     updateConvertButton();
-    selectBtn.disabled = false;
     outputFolderBtn.disabled = false;
     usbToggle.disabled = false;
     showCancelButton(false);
@@ -265,10 +493,10 @@ cancelBtn.addEventListener('click', async () => {
     if (usbToggle.checked) {
       updateUsbStatus('monitoring');
     }
-    // Reset file display
+    // Reset selection
     selectedFile = null;
-    fileDisplay.textContent = 'No file selected';
-    fileDisplay.classList.remove('has-value');
+    // Deselect any selected video items
+    document.querySelectorAll('.video-item.selected').forEach(item => item.classList.remove('selected'));
   }
 });
 
@@ -305,7 +533,6 @@ window.api.onCameraDetected((data) => {
       status.textContent = 'Camera detected, searching for videos...';
       setStatusState('working');
       // Disable UI when camera is detected
-      selectBtn.disabled = true;
       outputFolderBtn.disabled = true;
       convertBtn.disabled = true;
       usbToggle.disabled = true;
@@ -324,7 +551,6 @@ window.api.onCameraDetected((data) => {
       status.textContent = `${data.file} already processed, skipping`;
       setStatusState('success');
       // Re-enable UI
-      selectBtn.disabled = false;
       outputFolderBtn.disabled = false;
       usbToggle.disabled = false;
       updateConvertButton();
@@ -347,7 +573,6 @@ window.api.onAutoConvertReady(async (filePath) => {
   updateUsbStatus('monitoring');
   isConverting = true;
   convertBtn.disabled = true;
-  selectBtn.disabled = true;
   outputFolderBtn.disabled = true;
   usbToggle.disabled = true;
   showCancelButton(true);
@@ -355,20 +580,8 @@ window.api.onAutoConvertReady(async (filePath) => {
   setProgressState('active');
   setStatusState('working');
 
-  // Update file display to show the auto-detected file (remove temp_ prefix for cleaner display)
+  // Set the selected file for auto-conversion
   selectedFile = filePath;
-  let displayName = filePath;
-  const tempPrefix = 'temp_';
-  const lastSlash = filePath.lastIndexOf('/') !== -1 ? filePath.lastIndexOf('/') : filePath.lastIndexOf('\\');
-  if (lastSlash !== -1) {
-    const dir = filePath.substring(0, lastSlash + 1);
-    const filename = filePath.substring(lastSlash + 1);
-    if (filename.startsWith(tempPrefix)) {
-      displayName = dir + filename.substring(tempPrefix.length);
-    }
-  }
-  fileDisplay.textContent = displayName;
-  fileDisplay.classList.add('has-value');
 
   // Reset progress bar for conversion (was showing copy progress)
   progressBar.style.width = '0%';
@@ -387,11 +600,12 @@ window.api.onAutoConvertReady(async (filePath) => {
   } finally {
     isConverting = false;
     updateConvertButton();
-    selectBtn.disabled = false;
     outputFolderBtn.disabled = false;
     usbToggle.disabled = false;
     showCancelButton(false);
     updatePostToFacebookButton();
+    // Refresh converted videos list after conversion
+    refreshConvertedVideos();
   }
 });
 

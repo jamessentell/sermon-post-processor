@@ -8,6 +8,7 @@ const authServer = require('./auth-server');
 
 let mainWindow;
 let usbMonitoringInterval = null;
+let driveMonitoringInterval = null;
 let knownMountPoints = new Set();
 let isProcessingCamera = false;
 
@@ -41,8 +42,8 @@ function saveSettings(settings) {
  */
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 600,
+    width: 1200,
+    height: 750,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -342,8 +343,31 @@ ipcMain.handle('get-usb-monitoring-status', async () => {
   };
 });
 
+// Start drive monitoring (always active for video list updates)
+function startDriveMonitoring() {
+  if (driveMonitoringInterval) return;
+  driveMonitoringInterval = setInterval(pollDrivesWithNotification, 2000);
+  console.log('Drive monitoring started');
+}
+
+function stopDriveMonitoring() {
+  if (driveMonitoringInterval) {
+    clearInterval(driveMonitoringInterval);
+    driveMonitoringInterval = null;
+    console.log('Drive monitoring stopped');
+  }
+}
+
 // Start monitoring on app ready if enabled in settings
 app.on('ready', () => {
+  // Initialize drive connection status
+  const mountPoints = getMountPoints();
+  const clipPath = checkForCameraDrive(mountPoints);
+  previousDriveConnected = clipPath !== null;
+
+  // Always start drive monitoring for video list updates
+  startDriveMonitoring();
+
   const settings = loadSettings();
   if (settings.usbMonitoringEnabled) {
     startUsbMonitoring();
@@ -353,6 +377,7 @@ app.on('ready', () => {
 // Stop monitoring on app quit
 app.on('before-quit', () => {
   stopUsbMonitoring();
+  stopDriveMonitoring();
 });
 
 // Facebook IPC Handlers
@@ -472,3 +497,131 @@ ipcMain.handle('post-to-facebook', async (event, videoPath) => {
     throw err;
   }
 });
+
+// Video List IPC Handlers
+ipcMain.handle('list-video-files', async () => {
+  const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
+  const mountPoints = getMountPoints();
+  const clipPath = checkForCameraDrive(mountPoints);
+
+  if (!clipPath) {
+    return { connected: false, files: [] };
+  }
+
+  const settings = loadSettings();
+  const outputFolder = settings.outputFolder;
+
+  try {
+    const files = fs.readdirSync(clipPath)
+      .filter(f => videoExtensions.includes(path.extname(f).toLowerCase()))
+      .map(f => {
+        const fullPath = path.join(clipPath, f);
+        const stats = fs.statSync(fullPath);
+
+        // Determine copy/convert status
+        let status = 'on-camera'; // default
+        if (outputFolder) {
+          // Check if fully converted (in a date subfolder with _1080p suffix)
+          if (converter.outputExists(fullPath, outputFolder)) {
+            status = 'converted';
+          } else {
+            // Check if copied but not yet converted (temp_ file in output folder)
+            const tempPath = path.join(outputFolder, `temp_${f}`);
+            const copiedPath = path.join(outputFolder, f);
+            if (fs.existsSync(tempPath) || fs.existsSync(copiedPath)) {
+              status = 'copied';
+            }
+          }
+        }
+
+        return {
+          name: f,
+          path: fullPath,
+          size: stats.size,
+          mtime: stats.mtime.getTime(),
+          status
+        };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+
+    return { connected: true, clipPath, files };
+  } catch (err) {
+    console.error('Error listing video files:', err);
+    return { connected: true, clipPath, files: [] };
+  }
+});
+
+ipcMain.handle('get-drive-status', async () => {
+  const mountPoints = getMountPoints();
+  const clipPath = checkForCameraDrive(mountPoints);
+  return {
+    connected: clipPath !== null,
+    clipPath
+  };
+});
+
+ipcMain.handle('list-converted-videos', async () => {
+  const settings = loadSettings();
+  const outputFolder = settings.outputFolder;
+
+  if (!outputFolder || !fs.existsSync(outputFolder)) {
+    return { files: [] };
+  }
+
+  const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+
+  try {
+    const files = [];
+
+    // Scan date-named subfolders for converted (_1080p) videos
+    const entries = fs.readdirSync(outputFolder, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory() && datePattern.test(entry.name)) {
+        const subfolderPath = path.join(outputFolder, entry.name);
+        const subFiles = fs.readdirSync(subfolderPath);
+        for (const f of subFiles) {
+          const ext = path.extname(f).toLowerCase();
+          const baseName = path.basename(f, ext);
+          if (videoExtensions.includes(ext) && baseName.endsWith('_1080p')) {
+            const fullPath = path.join(subfolderPath, f);
+            const stats = fs.statSync(fullPath);
+            files.push({
+              name: f,
+              path: fullPath,
+              size: stats.size,
+              mtime: stats.mtime.getTime(),
+              folder: entry.name
+            });
+          }
+        }
+      }
+    }
+
+    files.sort((a, b) => b.mtime - a.mtime);
+    return { files };
+  } catch (err) {
+    console.error('Error listing converted videos:', err);
+    return { files: [] };
+  }
+});
+
+// Track previous drive status for change detection
+let previousDriveConnected = false;
+
+function pollDrivesWithNotification() {
+  const mountPoints = getMountPoints();
+  const clipPath = checkForCameraDrive(mountPoints);
+  const isConnected = clipPath !== null;
+
+  // Emit drive-connection-changed if status changed
+  if (isConnected !== previousDriveConnected) {
+    previousDriveConnected = isConnected;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('drive-connection-changed', {
+        connected: isConnected,
+        clipPath
+      });
+    }
+  }
+}
