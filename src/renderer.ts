@@ -1,55 +1,127 @@
-const convertBtn = document.getElementById('convertBtn');
-const cancelBtn = document.getElementById('cancelBtn');
-const outputFolderBtn = document.getElementById('outputFolderBtn');
-const folderDisplay = document.getElementById('folderDisplay');
-const progressBar = document.getElementById('progressBar');
-const status = document.getElementById('status');
-const statusMeta = document.getElementById('statusMeta');
-const usbToggle = document.getElementById('usbToggle');
-const usbIndicator = document.getElementById('usbIndicator');
-const usbStatus = document.getElementById('usbStatus');
+interface VideoFile {
+  name: string;
+  path: string;
+  size: number;
+  mtime: number;
+  status?: 'on-camera' | 'copied' | 'converted';
+}
+
+interface ConvertedVideo {
+  name: string;
+  path: string;
+  size: number;
+  mtime: number;
+  folder?: string;
+}
+
+interface FacebookPage {
+  id: string;
+  name: string;
+  access_token: string;
+}
+
+interface FacebookStatus {
+  connected: boolean;
+  pageName?: string;
+  hasCredentials?: boolean;
+}
+
+interface DriveConnectionData {
+  connected: boolean;
+  clipPath: string | null;
+}
+
+interface CameraDetectionData {
+  status: 'detected' | 'found-video' | 'skipped';
+  clipPath?: string;
+  file?: string;
+}
+
+interface ElectronApi {
+  selectFile: () => Promise<string | null>;
+  selectOutputFolder: () => Promise<string | null>;
+  getOutputFolder: () => Promise<string | null>;
+  convertVideo: (filePath: string) => Promise<string>;
+  cancelConversion: () => Promise<boolean>;
+  onProgress: (callback: (percent: number) => void) => void;
+  onStatus: (callback: (message: string) => void) => void;
+  toggleUsbMonitoring: (enabled: boolean) => Promise<boolean>;
+  getUsbMonitoringStatus: () => Promise<{ enabled: boolean; active: boolean }>;
+  onCameraDetected: (callback: (data: CameraDetectionData) => void) => void;
+  onCopyProgress: (callback: (percent: number) => void) => void;
+  onAutoConvertReady: (callback: (filePath: string) => void) => void;
+  listVideoFiles: () => Promise<{ connected: boolean; clipPath?: string; files: VideoFile[] }>;
+  listConvertedVideos: () => Promise<{ files: ConvertedVideo[] }>;
+  getDriveStatus: () => Promise<{ connected: boolean; clipPath?: string | null }>;
+  onDriveConnectionChanged: (callback: (data: DriveConnectionData) => void) => void;
+  saveFacebookCredentials: (credentials: { appId: string; appSecret: string }) => Promise<boolean>;
+  getFacebookStatus: () => Promise<FacebookStatus>;
+  startFacebookAuth: () => Promise<FacebookPage[]>;
+  selectFacebookPage: (pageInfo: FacebookPage) => Promise<boolean>;
+  disconnectFacebook: () => Promise<boolean>;
+  postToFacebook: (videoPath: string) => Promise<{ success: boolean; videoId: string }>;
+  onFacebookUploadProgress: (callback: (percent: number) => void) => void;
+  onFacebookStatus: (callback: (message: string) => void) => void;
+}
+
+declare global {
+  interface Window {
+    api: ElectronApi;
+  }
+}
+
+const convertBtn = document.getElementById('convertBtn') as HTMLButtonElement;
+const cancelBtn = document.getElementById('cancelBtn') as HTMLButtonElement;
+const outputFolderBtn = document.getElementById('outputFolderBtn') as HTMLButtonElement;
+const folderDisplay = document.getElementById('folderDisplay') as HTMLElement;
+const progressBar = document.getElementById('progressBar') as HTMLElement;
+const status = document.getElementById('status') as HTMLElement;
+const statusMeta = document.getElementById('statusMeta') as HTMLElement;
+const usbToggle = document.getElementById('usbToggle') as HTMLInputElement;
+const usbIndicator = document.getElementById('usbIndicator') as HTMLElement;
+const usbStatus = document.getElementById('usbStatus') as HTMLElement;
 
 // Page elements
-const navItems = document.querySelectorAll('.nav-item');
-const homePage = document.getElementById('homePage');
-const settingsPage = document.getElementById('settingsPage');
+const navItems = document.querySelectorAll('.nav-item') as NodeListOf<HTMLElement>;
+const homePage = document.getElementById('homePage') as HTMLElement;
+const settingsPage = document.getElementById('settingsPage') as HTMLElement;
 
 // Video list elements
-const cameraVideoList = document.getElementById('cameraVideoList');
-const convertedVideoList = document.getElementById('convertedVideoList');
-const cameraEmptyState = document.getElementById('cameraEmptyState');
-const convertedEmptyState = document.getElementById('convertedEmptyState');
+const cameraVideoList = document.getElementById('cameraVideoList') as HTMLElement;
+const convertedVideoList = document.getElementById('convertedVideoList') as HTMLElement;
+const cameraEmptyState = document.getElementById('cameraEmptyState') as HTMLElement;
+const convertedEmptyState = document.getElementById('convertedEmptyState') as HTMLElement;
 
 // Facebook elements
-const facebookStatusContainer = document.getElementById('facebookStatusContainer');
-const facebookStatusText = document.getElementById('facebookStatus');
-const facebookConnectBtn = document.getElementById('facebookConnectBtn');
-const postToFacebookBtn = document.getElementById('postToFacebookBtn');
-const setupModal = document.getElementById('setupModal');
-const pageModal = document.getElementById('pageModal');
-const appIdInput = document.getElementById('appIdInput');
-const appSecretInput = document.getElementById('appSecretInput');
-const setupSaveBtn = document.getElementById('setupSaveBtn');
-const setupCancelBtn = document.getElementById('setupCancelBtn');
-const pageList = document.getElementById('pageList');
-const pageCancelBtn = document.getElementById('pageCancelBtn');
+const facebookStatusContainer = document.getElementById('facebookStatusContainer') as HTMLElement;
+const facebookStatusText = document.getElementById('facebookStatus') as HTMLElement;
+const facebookConnectBtn = document.getElementById('facebookConnectBtn') as HTMLButtonElement;
+const postToFacebookBtn = document.getElementById('postToFacebookBtn') as HTMLButtonElement;
+const setupModal = document.getElementById('setupModal') as HTMLElement;
+const pageModal = document.getElementById('pageModal') as HTMLElement;
+const appIdInput = document.getElementById('appIdInput') as HTMLInputElement;
+const appSecretInput = document.getElementById('appSecretInput') as HTMLInputElement;
+const setupSaveBtn = document.getElementById('setupSaveBtn') as HTMLButtonElement;
+const setupCancelBtn = document.getElementById('setupCancelBtn') as HTMLButtonElement;
+const pageList = document.getElementById('pageList') as HTMLElement;
+const pageCancelBtn = document.getElementById('pageCancelBtn') as HTMLButtonElement;
 
-let selectedFile = null;
-let outputFolder = null;
+let selectedFile: string | null = null;
+let outputFolder: string | null = null;
 let isConverting = false;
-let lastConvertedPath = null;
+let lastConvertedPath: string | null = null;
 let isPostingToFacebook = false;
 let isFacebookConnected = false;
 
 // Page and video list state
 let currentPage = 'home';
-let cameraVideos = [];
-let convertedVideos = [];
-let connectedDrivePath = null;
+let cameraVideos: VideoFile[] = [];
+let convertedVideos: ConvertedVideo[] = [];
+let connectedDrivePath: string | null = null;
 let isDriveConnected = false;
 let isUsbMonitoringEnabled = false;
 
-function showCancelButton(show) {
+function showCancelButton(show: boolean): void {
   if (show) {
     cancelBtn.classList.remove('hidden');
   } else {
@@ -57,14 +129,14 @@ function showCancelButton(show) {
   }
 }
 
-function setProgressState(state) {
+function setProgressState(state: string | null): void {
   progressBar.classList.remove('active', 'success', 'error');
   if (state) {
     progressBar.classList.add(state);
   }
 }
 
-function setStatusState(state) {
+function setStatusState(state: string | null): void {
   status.classList.remove('success', 'error', 'working');
   if (state) {
     status.classList.add(state);
@@ -72,7 +144,7 @@ function setStatusState(state) {
 }
 
 // Page navigation
-function switchToPage(pageName) {
+function switchToPage(pageName: string): void {
   currentPage = pageName;
 
   // Update nav items
@@ -97,13 +169,13 @@ function switchToPage(pageName) {
 // Nav click handlers
 navItems.forEach(item => {
   item.addEventListener('click', () => {
-    switchToPage(item.dataset.page);
+    switchToPage(item.dataset.page!);
   });
 });
 
 
 // Helper functions for formatting
-function formatFileSize(bytes) {
+function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
@@ -111,10 +183,10 @@ function formatFileSize(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-function formatDate(timestamp) {
+function formatDate(timestamp: number): string {
   const date = new Date(timestamp);
   const now = new Date();
-  const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+  const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
 
   if (diffDays === 0) {
     return 'Today ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -127,7 +199,7 @@ function formatDate(timestamp) {
 }
 
 // Video list functions
-async function refreshCameraVideos() {
+async function refreshCameraVideos(): Promise<void> {
   try {
     const result = await window.api.listVideoFiles();
     cameraVideos = result.files || [];
@@ -139,7 +211,7 @@ async function refreshCameraVideos() {
   }
 }
 
-async function refreshConvertedVideos() {
+async function refreshConvertedVideos(): Promise<void> {
   try {
     const result = await window.api.listConvertedVideos();
     convertedVideos = result.files || [];
@@ -150,11 +222,11 @@ async function refreshConvertedVideos() {
   }
 }
 
-async function refreshAllVideos() {
+async function refreshAllVideos(): Promise<void> {
   await Promise.all([refreshCameraVideos(), refreshConvertedVideos()]);
 }
 
-function renderCameraVideoList() {
+function renderCameraVideoList(): void {
   // Clear existing items (except empty state)
   const existingItems = cameraVideoList.querySelectorAll('.video-item');
   existingItems.forEach(item => item.remove());
@@ -174,7 +246,7 @@ function renderCameraVideoList() {
   });
 }
 
-function renderConvertedVideoList() {
+function renderConvertedVideoList(): void {
   // Clear existing items (except empty state)
   const existingItems = convertedVideoList.querySelectorAll('.video-item');
   existingItems.forEach(item => item.remove());
@@ -194,7 +266,7 @@ function renderConvertedVideoList() {
   });
 }
 
-function createVideoItem(video, type) {
+function createVideoItem(video: VideoFile | ConvertedVideo, type: 'camera' | 'converted'): HTMLElement {
   const item = document.createElement('div');
   item.className = 'video-item';
   if (selectedFile === video.path) {
@@ -204,15 +276,15 @@ function createVideoItem(video, type) {
   item.dataset.type = type;
 
   let badgeHtml = '';
-  if (type === 'camera' && video.status === 'copied') {
+  if (type === 'camera' && (video as VideoFile).status === 'copied') {
     badgeHtml = '<span class="video-status-badge copied">Copied</span>';
-  } else if (type === 'camera' && video.status === 'converted') {
+  } else if (type === 'camera' && (video as VideoFile).status === 'converted') {
     badgeHtml = '<span class="video-status-badge converted">Converted</span>';
   }
 
   let metaText = `${formatFileSize(video.size)} • ${formatDate(video.mtime)}`;
-  if (type === 'converted' && video.folder) {
-    metaText = `${video.folder} • ${formatFileSize(video.size)}`;
+  if (type === 'converted' && (video as ConvertedVideo).folder) {
+    metaText = `${(video as ConvertedVideo).folder} • ${formatFileSize(video.size)}`;
   }
 
   item.innerHTML = `
@@ -227,7 +299,7 @@ function createVideoItem(video, type) {
   return item;
 }
 
-function showCameraEmptyState(message) {
+function showCameraEmptyState(message?: string): void {
   // Remove video items
   const existingItems = cameraVideoList.querySelectorAll('.video-item');
   existingItems.forEach(item => item.remove());
@@ -236,15 +308,15 @@ function showCameraEmptyState(message) {
   cameraEmptyState.style.display = 'flex';
 
   if (message) {
-    cameraEmptyState.querySelector('.empty-title').textContent = message;
+    cameraEmptyState.querySelector('.empty-title')!.textContent = message;
   } else {
-    cameraEmptyState.querySelector('.empty-title').textContent = 'No camera connected';
-    cameraEmptyState.querySelector('.empty-description').textContent =
+    cameraEmptyState.querySelector('.empty-title')!.textContent = 'No camera connected';
+    cameraEmptyState.querySelector('.empty-description')!.textContent =
       'Connect your camera via USB to see available video files.';
   }
 }
 
-function showConvertedEmptyState(message) {
+function showConvertedEmptyState(message?: string): void {
   // Remove video items
   const existingItems = convertedVideoList.querySelectorAll('.video-item');
   existingItems.forEach(item => item.remove());
@@ -253,15 +325,15 @@ function showConvertedEmptyState(message) {
   convertedEmptyState.style.display = 'flex';
 
   if (message) {
-    convertedEmptyState.querySelector('.empty-title').textContent = message;
+    convertedEmptyState.querySelector('.empty-title')!.textContent = message;
   } else {
-    convertedEmptyState.querySelector('.empty-title').textContent = 'No converted videos';
-    convertedEmptyState.querySelector('.empty-description').textContent =
+    convertedEmptyState.querySelector('.empty-title')!.textContent = 'No converted videos';
+    convertedEmptyState.querySelector('.empty-description')!.textContent =
       'Converted videos will appear here after processing.';
   }
 }
 
-function selectVideoFromList(video, type) {
+function selectVideoFromList(video: VideoFile | ConvertedVideo, type: 'camera' | 'converted'): void {
   selectedFile = video.path;
   progressBar.style.width = '0%';
   setProgressState(null);
@@ -283,7 +355,7 @@ function selectVideoFromList(video, type) {
   // Update selected state in both lists
   const allItems = document.querySelectorAll('.video-item');
   allItems.forEach(item => {
-    if (item.dataset.path === video.path) {
+    if ((item as HTMLElement).dataset.path === video.path) {
       item.classList.add('selected');
     } else {
       item.classList.remove('selected');
@@ -292,7 +364,7 @@ function selectVideoFromList(video, type) {
 }
 
 // Drive connection change listener
-window.api.onDriveConnectionChanged((data) => {
+window.api.onDriveConnectionChanged((data: DriveConnectionData) => {
   connectedDrivePath = data.clipPath;
   isDriveConnected = data.connected;
   updateUsbIndicator();
@@ -300,7 +372,7 @@ window.api.onDriveConnectionChanged((data) => {
 });
 
 // Load saved output folder and USB monitoring status on startup
-async function init() {
+async function init(): Promise<void> {
   const savedFolder = await window.api.getOutputFolder();
   if (savedFolder) {
     outputFolder = savedFolder;
@@ -327,7 +399,7 @@ async function init() {
   await refreshAllVideos();
 }
 
-async function initFacebook() {
+async function initFacebook(): Promise<void> {
   try {
     const fbStatus = await window.api.getFacebookStatus();
     updateFacebookUI(fbStatus);
@@ -336,7 +408,7 @@ async function initFacebook() {
   }
 }
 
-function updateFacebookUI(fbStatus) {
+function updateFacebookUI(fbStatus: FacebookStatus): void {
   isFacebookConnected = fbStatus.connected;
   if (fbStatus.connected) {
     facebookStatusText.textContent = `Facebook: ${fbStatus.pageName}`;
@@ -350,21 +422,21 @@ function updateFacebookUI(fbStatus) {
   updatePostToFacebookButton();
 }
 
-function updatePostToFacebookButton() {
+function updatePostToFacebookButton(): void {
   postToFacebookBtn.disabled = !lastConvertedPath || !isFacebookConnected || isPostingToFacebook || isConverting;
 }
 
-function showSetupModal() {
+function showSetupModal(): void {
   setupModal.classList.add('visible');
 }
 
-function hideSetupModal() {
+function hideSetupModal(): void {
   setupModal.classList.remove('visible');
   appIdInput.value = '';
   appSecretInput.value = '';
 }
 
-function showPageModal(pages) {
+function showPageModal(pages: FacebookPage[]): void {
   pageList.innerHTML = '';
   pages.forEach(page => {
     const item = document.createElement('div');
@@ -379,11 +451,11 @@ function showPageModal(pages) {
   pageModal.classList.add('visible');
 }
 
-function hidePageModal() {
+function hidePageModal(): void {
   pageModal.classList.remove('visible');
 }
 
-async function selectPage(page) {
+async function selectPage(page: FacebookPage): Promise<void> {
   try {
     await window.api.selectFacebookPage(page);
     hidePageModal();
@@ -391,12 +463,12 @@ async function selectPage(page) {
     status.textContent = `Connected to ${page.name}`;
     setStatusState('success');
   } catch (err) {
-    status.textContent = `Error: ${err.message}`;
+    status.textContent = `Error: ${(err as Error).message}`;
     setStatusState('error');
   }
 }
 
-function updateUsbIndicator(override) {
+function updateUsbIndicator(override?: string): void {
   usbIndicator.classList.remove('active', 'detected', 'connected');
 
   // Transient states from camera auto-detect flow
@@ -423,11 +495,11 @@ function updateUsbIndicator(override) {
   }
 }
 
-function updateConvertButton() {
+function updateConvertButton(): void {
   convertBtn.disabled = !selectedFile || !outputFolder || isConverting;
 }
 
-function updateStatus() {
+function updateStatus(): void {
   if (!outputFolder && !selectedFile) {
     status.textContent = 'Select an output folder and video file to begin';
   } else if (!outputFolder) {
@@ -471,7 +543,7 @@ convertBtn.addEventListener('click', async () => {
     setStatusState('success');
     setProgressState('success');
   } catch (err) {
-    status.textContent = `Error: ${err.message}`;
+    status.textContent = `Error: ${(err as Error).message}`;
     setStatusState('error');
     setProgressState('error');
   } finally {
@@ -515,12 +587,12 @@ cancelBtn.addEventListener('click', async () => {
   }
 });
 
-window.api.onProgress((percent) => {
+window.api.onProgress((percent: number) => {
   progressBar.style.width = `${percent}%`;
   statusMeta.textContent = `${percent.toFixed(0)}%`;
 });
 
-window.api.onStatus((message) => {
+window.api.onStatus((message: string) => {
   status.textContent = message;
   setStatusState('working');
 
@@ -542,7 +614,7 @@ usbToggle.addEventListener('change', async () => {
 });
 
 // Camera detection events
-window.api.onCameraDetected((data) => {
+window.api.onCameraDetected((data: CameraDetectionData) => {
   switch (data.status) {
     case 'detected':
       updateUsbIndicator('detected');
@@ -575,7 +647,7 @@ window.api.onCameraDetected((data) => {
 });
 
 // Copy progress
-window.api.onCopyProgress((percent) => {
+window.api.onCopyProgress((percent: number) => {
   progressBar.style.width = `${percent}%`;
   statusMeta.textContent = `Copying: ${percent.toFixed(0)}%`;
   if (percent < 100) {
@@ -585,7 +657,7 @@ window.api.onCopyProgress((percent) => {
 });
 
 // Auto-convert after copy completes
-window.api.onAutoConvertReady(async (filePath) => {
+window.api.onAutoConvertReady(async (filePath: string) => {
   updateUsbIndicator();
   isConverting = true;
   convertBtn.disabled = true;
@@ -610,7 +682,7 @@ window.api.onAutoConvertReady(async (filePath) => {
     setStatusState('success');
     setProgressState('success');
   } catch (err) {
-    status.textContent = `Error: ${err.message}`;
+    status.textContent = `Error: ${(err as Error).message}`;
     setStatusState('error');
     setProgressState('error');
   } finally {
@@ -635,7 +707,7 @@ facebookConnectBtn.addEventListener('click', async () => {
       status.textContent = 'Disconnected from Facebook';
       setStatusState(null);
     } catch (err) {
-      status.textContent = `Error: ${err.message}`;
+      status.textContent = `Error: ${(err as Error).message}`;
       setStatusState('error');
     }
   } else {
@@ -668,14 +740,14 @@ setupSaveBtn.addEventListener('click', async () => {
     hideSetupModal();
     startFacebookAuth();
   } catch (err) {
-    status.textContent = `Error: ${err.message}`;
+    status.textContent = `Error: ${(err as Error).message}`;
     setStatusState('error');
   }
 });
 
 pageCancelBtn.addEventListener('click', hidePageModal);
 
-async function startFacebookAuth() {
+async function startFacebookAuth(): Promise<void> {
   facebookConnectBtn.disabled = true;
   status.textContent = 'Opening browser for authorization...';
   setStatusState('working');
@@ -684,7 +756,7 @@ async function startFacebookAuth() {
     const pages = await window.api.startFacebookAuth();
     showPageModal(pages);
   } catch (err) {
-    status.textContent = `Error: ${err.message}`;
+    status.textContent = `Error: ${(err as Error).message}`;
     setStatusState('error');
   } finally {
     facebookConnectBtn.disabled = false;
@@ -709,7 +781,7 @@ postToFacebookBtn.addEventListener('click', async () => {
       setProgressState('success');
     }
   } catch (err) {
-    status.textContent = `Facebook upload failed: ${err.message}`;
+    status.textContent = `Facebook upload failed: ${(err as Error).message}`;
     setStatusState('error');
     setProgressState('error');
   } finally {
@@ -719,12 +791,12 @@ postToFacebookBtn.addEventListener('click', async () => {
 });
 
 // Facebook progress and status listeners
-window.api.onFacebookUploadProgress((percent) => {
+window.api.onFacebookUploadProgress((percent: number) => {
   progressBar.style.width = `${percent}%`;
   statusMeta.textContent = `Uploading: ${percent}%`;
 });
 
-window.api.onFacebookStatus((message) => {
+window.api.onFacebookStatus((message: string) => {
   status.textContent = message;
   setStatusState('working');
 });

@@ -1,41 +1,27 @@
-const path = require('path');
-const fs = require('fs');
-const ffmpeg = require('fluent-ffmpeg');
+import path from 'path';
+import fs from 'fs';
+import ffmpeg from 'fluent-ffmpeg';
+import { ConverterCallbacks, CopyStreams } from './types';
 
 // State
-let currentFfmpegProcess = null;
-let currentOutputPath = null;
-let currentTempPath = null;
-let currentCopyStreams = null;
+let currentFfmpegProcess: ffmpeg.FfmpegCommand | null = null;
+let currentOutputPath: string | null = null;
+let currentTempPath: string | null = null;
+let currentCopyStreams: CopyStreams | null = null;
 let isCopyCancelled = false;
 
 // Event callbacks (set by init)
-let onProgress = null;
-let onStatus = null;
-let onCopyProgress = null;
+let onProgress: (percent: number) => void = () => {};
+let onStatus: (message: string) => void = () => {};
+let onCopyProgress: (percent: number) => void = () => {};
 
-/**
- * Configure callback hooks for progress and status notifications.
- * @param {{onProgress?: function(number):void, onStatus?: function(string):void, onCopyProgress?: function(number):void}} callbacks - Callback functions to receive updates.
- * @param {function(number):void} [callbacks.onProgress] - Called with a number 0–100 to report conversion progress percentage.
- * @param {function(string):void} [callbacks.onStatus] - Called with a human-readable status message.
- * @param {function(number):void} [callbacks.onCopyProgress] - Called with a number 0–100 to report file copy progress percentage.
- */
-function init(callbacks) {
+export function init(callbacks: ConverterCallbacks): void {
   onProgress = callbacks.onProgress || (() => {});
   onStatus = callbacks.onStatus || (() => {});
   onCopyProgress = callbacks.onCopyProgress || (() => {});
 }
 
-/**
- * Convert the given video to 1080p and save it into a date-based subfolder under the specified output folder.
- *
- * Creates a YYYY-MM-DD subfolder inside outputFolder, derives an output filename by removing a leading `temp_` prefix (if present) and appending `_1080p` before the original extension, runs ffmpeg to produce the 1080p file, reports progress/status via module callbacks, and resolves with the final output path when complete.
- * @param {string} inputPath - Path to the input video file.
- * @param {string} outputFolder - Base output folder where a date-based subfolder (YYYY-MM-DD) will be created to store the converted file.
- * @returns {Promise<string>} Path to the converted file.
- */
-function convertVideo(inputPath, outputFolder) {
+export function convertVideo(inputPath: string, outputFolder: string): Promise<string> {
   if (!outputFolder) {
     return Promise.reject(new Error('Please select an output folder first'));
   }
@@ -97,7 +83,7 @@ function convertVideo(inputPath, outputFolder) {
         onStatus('Conversion complete!');
         resolve(outputPath);
       })
-      .on('error', (err) => {
+      .on('error', (err: Error) => {
         currentFfmpegProcess = null;
         currentOutputPath = null;
         // Don't report error if it was cancelled
@@ -113,16 +99,7 @@ function convertVideo(inputPath, outputFolder) {
   });
 }
 
-/**
- * Copy a file to a destination while reporting progress.
- *
- * Reports percentage progress through the module's `onCopyProgress` callback and stores active streams in `currentCopyStreams` so the operation can be cancelled.
- * Resolves when the copy finishes successfully. Rejects with the underlying stream error if a read/write error occurs, or rejects with `Error('Copy cancelled')` if the copy is cancelled.
- * @param {string} sourcePath - Path to the source file to copy.
- * @param {string} destPath - Path where the file will be written.
- * @returns {Promise<void>} Resolves when the copy completes; rejects on stream error or when cancelled.
- */
-function copyFile(sourcePath, destPath) {
+export function copyFile(sourcePath: string, destPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const stats = fs.statSync(sourcePath);
     const totalSize = stats.size;
@@ -135,20 +112,20 @@ function copyFile(sourcePath, destPath) {
     // Store streams for potential cancellation
     currentCopyStreams = { readStream, writeStream, destPath };
 
-    readStream.on('data', (chunk) => {
+    readStream.on('data', (chunk: Buffer) => {
       copiedSize += chunk.length;
       const percent = (copiedSize / totalSize) * 100;
       onCopyProgress(percent);
     });
 
-    readStream.on('error', (err) => {
+    readStream.on('error', (err: Error) => {
       currentCopyStreams = null;
       if (!isCopyCancelled) {
         reject(err);
       }
     });
 
-    writeStream.on('error', (err) => {
+    writeStream.on('error', (err: Error) => {
       currentCopyStreams = null;
       if (!isCopyCancelled) {
         reject(err);
@@ -180,11 +157,7 @@ function copyFile(sourcePath, destPath) {
   });
 }
 
-/**
- * Cancel any ongoing copy or conversion operation and remove partial files.
- * @returns {{ wasCopying: boolean }} `wasCopying` is `true` if a file copy was cancelled, `false` otherwise.
- */
-function cancel() {
+export function cancel(): { wasCopying: boolean } {
   let wasCopying = false;
 
   // Cancel copy operation if in progress
@@ -209,22 +182,22 @@ function cancel() {
 
   // Cancel ffmpeg if in progress
   if (currentFfmpegProcess) {
-    const ffmpegProcess = currentFfmpegProcess;
+    const proc = currentFfmpegProcess;
     const killTimeout = setTimeout(() => {
       try {
-        ffmpegProcess.kill('SIGKILL');
-      } catch (err) {
+        proc.kill('SIGKILL');
+      } catch (_err) {
         // Ignore errors while forcing termination
       }
     }, 5000);
 
-    ffmpegProcess.once('exit', () => {
+    (proc as unknown as NodeJS.EventEmitter).once('exit', () => {
       clearTimeout(killTimeout);
     });
 
     try {
-      ffmpegProcess.kill('SIGINT');
-    } catch (err) {
+      proc.kill('SIGINT');
+    } catch (_err) {
       clearTimeout(killTimeout);
     }
 
@@ -259,20 +232,13 @@ function cancel() {
   return { wasCopying };
 }
 
-/**
- * Determine whether the 1080p output for a source file already exists in the date-based subfolder.
- * The date subfolder is derived from the source file's modification time (YYYY-MM-DD).
- * @param {string} sourcePath - Path to the source file whose modification date determines the date subfolder.
- * @param {string} outputFolder - Base output folder containing date-named subfolders.
- * @returns {boolean} `true` if the expected `<basename>_1080p<ext>` file exists in the date subfolder, `false` otherwise.
- */
-function outputExists(sourcePath, outputFolder) {
+export function outputExists(sourcePath: string, outputFolder: string): boolean {
   if (!outputFolder) return false;
 
-  let stats;
+  let stats: fs.Stats;
   try {
     stats = fs.statSync(sourcePath);
-  } catch (err) {
+  } catch (_err) {
     return false;
   }
 
@@ -287,19 +253,6 @@ function outputExists(sourcePath, outputFolder) {
   return fs.existsSync(outputPath);
 }
 
-/**
- * Determine whether a file copy operation is currently active.
- * @returns {boolean} `true` if a copy is in progress, `false` otherwise.
- */
-function isCopying() {
+export function isCopying(): boolean {
   return currentCopyStreams !== null;
 }
-
-module.exports = {
-  init,
-  convertVideo,
-  copyFile,
-  cancel,
-  outputExists,
-  isCopying
-};

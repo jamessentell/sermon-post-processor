@@ -1,9 +1,9 @@
-const http = require('http');
-const url = require('url');
+import http from 'http';
+import url from 'url';
 
-let server = null;
+let server: http.Server | null = null;
 
-function startAuthServer(port = 8888, timeoutMs = 300000) {
+export function startAuthServer(port: number = 8888, timeoutMs: number = 300000): Promise<string> {
   return new Promise((resolve, reject) => {
     if (server) {
       server.close();
@@ -18,11 +18,11 @@ function startAuthServer(port = 8888, timeoutMs = 300000) {
     }, timeoutMs);
 
     server = http.createServer((req, res) => {
-      const parsedUrl = url.parse(req.url, true);
+      const parsedUrl = url.parse(req.url || '', true);
 
       if (parsedUrl.pathname === '/callback') {
-        const code = parsedUrl.query.code;
-        const error = parsedUrl.query.error;
+        const code = parsedUrl.query.code as string | undefined;
+        const error = parsedUrl.query.error as string | undefined;
 
         if (error) {
           res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -36,7 +36,7 @@ function startAuthServer(port = 8888, timeoutMs = 300000) {
             </html>
           `);
           clearTimeout(timeout);
-          server.close();
+          server!.close();
           server = null;
           reject(new Error(`OAuth error: ${error}`));
         } else if (code) {
@@ -50,7 +50,7 @@ function startAuthServer(port = 8888, timeoutMs = 300000) {
             </html>
           `);
           clearTimeout(timeout);
-          server.close();
+          server!.close();
           server = null;
           resolve(code);
         } else {
@@ -70,7 +70,7 @@ function startAuthServer(port = 8888, timeoutMs = 300000) {
       }
     });
 
-    server.on('error', (err) => {
+    server.on('error', (err: Error) => {
       clearTimeout(timeout);
       reject(err);
     });
@@ -81,14 +81,9 @@ function startAuthServer(port = 8888, timeoutMs = 300000) {
   });
 }
 
-function stopAuthServer() {
+export function stopAuthServer(): void {
   if (server) {
     server.close();
     server = null;
   }
 }
-
-module.exports = {
-  startAuthServer,
-  stopAuthServer
-};

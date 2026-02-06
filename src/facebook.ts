@@ -1,11 +1,13 @@
-const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
+import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+import FormData from 'form-data';
+import { FacebookPage } from './types';
 
 const GRAPH_API_BASE = 'https://graph.facebook.com/v18.0';
 const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
 
-function getAuthUrl(appId, redirectUri) {
+export function getAuthUrl(appId: string, redirectUri: string): string {
   const scopes = [
     'pages_show_list',
     'pages_read_engagement',
@@ -19,7 +21,12 @@ function getAuthUrl(appId, redirectUri) {
     `&response_type=code`;
 }
 
-async function exchangeCodeForToken(code, appId, appSecret, redirectUri) {
+export async function exchangeCodeForToken(
+  code: string,
+  appId: string,
+  appSecret: string,
+  redirectUri: string
+): Promise<string> {
   const response = await axios.get(`${GRAPH_API_BASE}/oauth/access_token`, {
     params: {
       client_id: appId,
@@ -31,7 +38,11 @@ async function exchangeCodeForToken(code, appId, appSecret, redirectUri) {
   return response.data.access_token;
 }
 
-async function getLongLivedToken(shortToken, appId, appSecret) {
+export async function getLongLivedToken(
+  shortToken: string,
+  appId: string,
+  appSecret: string
+): Promise<string> {
   const response = await axios.get(`${GRAPH_API_BASE}/oauth/access_token`, {
     params: {
       grant_type: 'fb_exchange_token',
@@ -43,7 +54,7 @@ async function getLongLivedToken(shortToken, appId, appSecret) {
   return response.data.access_token;
 }
 
-async function getUserPages(userAccessToken) {
+export async function getUserPages(userAccessToken: string): Promise<FacebookPage[]> {
   const response = await axios.get(`${GRAPH_API_BASE}/me/accounts`, {
     params: {
       access_token: userAccessToken,
@@ -53,17 +64,24 @@ async function getUserPages(userAccessToken) {
   return response.data.data;
 }
 
-function formatSermonDate(date) {
-  const options = { year: 'numeric', month: 'long', day: 'numeric' };
+export function formatSermonDate(date: Date): string {
+  const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
   return new Intl.DateTimeFormat('en-US', options).format(date);
 }
 
-async function uploadVideoToPage(pageId, pageAccessToken, videoPath, sermonDate, onProgress, onStatus) {
+export async function uploadVideoToPage(
+  pageId: string,
+  pageAccessToken: string,
+  videoPath: string,
+  sermonDate: Date,
+  onProgress?: (percent: number) => void,
+  onStatus?: (message: string) => void
+): Promise<{ success: boolean; videoId: string }> {
   const fileSize = fs.statSync(videoPath).size;
   const fileName = path.basename(videoPath);
   const description = `Sermon ${formatSermonDate(sermonDate)}`;
 
-  onStatus && onStatus('Initializing upload...');
+  onStatus?.('Initializing upload...');
 
   // Step 1: Initialize upload session
   const startResponse = await axios.post(
@@ -80,7 +98,7 @@ async function uploadVideoToPage(pageId, pageAccessToken, videoPath, sermonDate,
 
   const { upload_session_id, video_id } = startResponse.data;
 
-  onStatus && onStatus('Uploading video...');
+  onStatus?.('Uploading video...');
 
   // Step 2: Upload chunks
   const fileHandle = fs.openSync(videoPath, 'r');
@@ -92,7 +110,6 @@ async function uploadVideoToPage(pageId, pageAccessToken, videoPath, sermonDate,
       const buffer = Buffer.alloc(chunkSize);
       fs.readSync(fileHandle, buffer, 0, chunkSize, startOffset);
 
-      const FormData = require('form-data');
       const form = new FormData();
       form.append('access_token', pageAccessToken);
       form.append('upload_phase', 'transfer');
@@ -113,13 +130,13 @@ async function uploadVideoToPage(pageId, pageAccessToken, videoPath, sermonDate,
       startOffset = parseInt(transferResponse.data.start_offset, 10);
 
       const percent = Math.round((startOffset / fileSize) * 100);
-      onProgress && onProgress(percent);
+      onProgress?.(percent);
     }
   } finally {
     fs.closeSync(fileHandle);
   }
 
-  onStatus && onStatus('Finalizing upload...');
+  onStatus?.('Finalizing upload...');
 
   // Step 3: Finish upload
   const finishResponse = await axios.post(
@@ -136,20 +153,11 @@ async function uploadVideoToPage(pageId, pageAccessToken, videoPath, sermonDate,
     }
   );
 
-  onProgress && onProgress(100);
-  onStatus && onStatus('Upload complete!');
+  onProgress?.(100);
+  onStatus?.('Upload complete!');
 
   return {
     success: finishResponse.data.success,
     videoId: video_id
   };
 }
-
-module.exports = {
-  getAuthUrl,
-  exchangeCodeForToken,
-  getLongLivedToken,
-  getUserPages,
-  uploadVideoToPage,
-  formatSermonDate
-};

@@ -1,21 +1,22 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
-const path = require('path');
-const fs = require('fs');
-const { execSync } = require('child_process');
-const converter = require('./converter');
-const facebook = require('./facebook');
-const authServer = require('./auth-server');
+import { app, BrowserWindow, ipcMain, dialog, shell, IpcMainInvokeEvent } from 'electron';
+import path from 'path';
+import fs from 'fs';
+import { execSync } from 'child_process';
+import * as converter from './converter';
+import * as facebook from './facebook';
+import * as authServer from './auth-server';
+import { Settings, FacebookPage, CameraDetectionData } from './types';
 
-let mainWindow;
-let usbMonitoringInterval = null;
-let driveMonitoringInterval = null;
-let knownMountPoints = new Set();
+let mainWindow: BrowserWindow | null = null;
+let usbMonitoringInterval: ReturnType<typeof setInterval> | null = null;
+let driveMonitoringInterval: ReturnType<typeof setInterval> | null = null;
+let knownMountPoints = new Set<string>();
 let isProcessingCamera = false;
 
 // Settings file path
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 
-function loadSettings() {
+function loadSettings(): Settings {
   try {
     if (fs.existsSync(settingsPath)) {
       return JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
@@ -26,7 +27,7 @@ function loadSettings() {
   return {};
 }
 
-function saveSettings(settings) {
+function saveSettings(settings: Settings): void {
   try {
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
   } catch (err) {
@@ -34,13 +35,7 @@ function saveSettings(settings) {
   }
 }
 
-/**
- * Create the main application BrowserWindow and initialize converter callbacks to forward events to the renderer.
- *
- * Sets the global `mainWindow` BrowserWindow, loads the app UI (index.html), and registers converter callbacks that
- * forward `conversion-progress`, `conversion-status`, and `copy-progress` IPC messages to the renderer process.
- */
-function createWindow() {
+function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 750,
@@ -52,13 +47,13 @@ function createWindow() {
     autoHideMenuBar: true
   });
 
-  mainWindow.loadFile('index.html');
+  mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
   // Initialize converter with event callbacks
   converter.init({
-    onProgress: (percent) => mainWindow.webContents.send('conversion-progress', percent),
-    onStatus: (message) => mainWindow.webContents.send('conversion-status', message),
-    onCopyProgress: (percent) => mainWindow.webContents.send('copy-progress', percent)
+    onProgress: (percent: number) => mainWindow!.webContents.send('conversion-progress', percent),
+    onStatus: (message: string) => mainWindow!.webContents.send('conversion-status', message),
+    onCopyProgress: (percent: number) => mainWindow!.webContents.send('copy-progress', percent)
   });
 }
 
@@ -78,7 +73,7 @@ app.on('activate', () => {
 
 // Handle file selection
 ipcMain.handle('select-file', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ['openFile'],
     filters: [
       { name: 'Videos', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm'] }
@@ -95,7 +90,7 @@ ipcMain.handle('select-file', async () => {
 // Handle output folder selection
 ipcMain.handle('select-output-folder', async () => {
   const settings = loadSettings();
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ['openDirectory'],
     defaultPath: settings.outputFolder
   });
@@ -117,9 +112,9 @@ ipcMain.handle('get-output-folder', async () => {
 });
 
 // Handle video conversion
-ipcMain.handle('convert-video', async (event, inputPath) => {
+ipcMain.handle('convert-video', async (_event: IpcMainInvokeEvent, inputPath: string) => {
   const settings = loadSettings();
-  return converter.convertVideo(inputPath, settings.outputFolder);
+  return converter.convertVideo(inputPath, settings.outputFolder!);
 });
 
 // Handle conversion/copy cancellation
@@ -132,33 +127,29 @@ ipcMain.handle('cancel-conversion', async () => {
 });
 
 // USB Monitoring Functions - Cross-platform mount point detection
-function getMountPoints() {
-  const mountPoints = [];
+function getMountPoints(): string[] {
+  const mountPoints: string[] = [];
   const platform = process.platform;
 
   try {
     if (platform === 'linux') {
-      // Read /proc/mounts for Linux
       const mounts = fs.readFileSync('/proc/mounts', 'utf8');
       const lines = mounts.split('\n');
       for (const line of lines) {
         const parts = line.split(' ');
         if (parts.length >= 2) {
           const mountPath = parts[1];
-          // Filter for likely removable media paths
           if (mountPath.startsWith('/media/') || mountPath.startsWith('/mnt/') || mountPath.startsWith('/run/media/')) {
             mountPoints.push(mountPath);
           }
         }
       }
     } else if (platform === 'darwin') {
-      // macOS - check /Volumes
       const volumes = fs.readdirSync('/Volumes');
       for (const vol of volumes) {
         mountPoints.push(path.join('/Volumes', vol));
       }
     } else if (platform === 'win32') {
-      // Windows - enumerate drive letters
       const output = execSync('wmic logicaldisk get name', { encoding: 'utf8' });
       const lines = output.split('\n');
       for (const line of lines) {
@@ -175,7 +166,7 @@ function getMountPoints() {
   return mountPoints;
 }
 
-function checkForCameraDrive(mountPoints) {
+function checkForCameraDrive(mountPoints: string[]): string | null {
   for (const mountPath of mountPoints) {
     const clipPath = path.join(mountPath, 'PRIVATE', 'M4ROOT', 'CLIP');
     if (fs.existsSync(clipPath)) {
@@ -185,12 +176,7 @@ function checkForCameraDrive(mountPoints) {
   return null;
 }
 
-/**
- * Find the most recently modified video file inside a camera CLIP directory.
- * @param {string} clipPath - Filesystem path to the directory to scan for video files.
- * @returns {string|null} The full path of the newest video file (extensions checked: .mp4, .mov, .avi, .mkv, .webm), or `null` if no matching file is found or an error occurs.
- */
-function getLatestVideoFile(clipPath) {
+function getLatestVideoFile(clipPath: string): string | null {
   const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
   try {
     const files = fs.readdirSync(clipPath)
@@ -199,7 +185,7 @@ function getLatestVideoFile(clipPath) {
         const fullPath = path.join(clipPath, f);
         return { name: f, path: fullPath, mtime: fs.statSync(fullPath).mtime };
       })
-      .sort((a, b) => b.mtime - a.mtime);
+      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
     return files[0] ? files[0].path : null;
   } catch (err) {
     console.error('Error reading clip directory:', err);
@@ -207,30 +193,19 @@ function getLatestVideoFile(clipPath) {
   }
 }
 
-/**
- * Copies a camera video to a temporary file in the configured output folder and triggers conversion.
- *
- * If no output folder is configured, sends an error status and returns. If the file has already been processed,
- * sends a skipped status and returns. Otherwise copies the file to a temp path inside the output folder, reports
- * copy progress and status via IPC, and signals the renderer with `auto-convert-ready` to start conversion. On copy
- * errors (except a cancellation signaled by an error with message "Copy cancelled"), sends an error status and removes
- * any created temporary file.
- *
- * @param {string} sourcePath - Absolute path to the source video file on the camera.
- */
-async function copyAndConvert(sourcePath) {
+async function copyAndConvert(sourcePath: string): Promise<void> {
   const settings = loadSettings();
   const outputFolder = settings.outputFolder;
 
   if (!outputFolder) {
-    mainWindow.webContents.send('conversion-status', 'Error: No output folder configured');
+    mainWindow!.webContents.send('conversion-status', 'Error: No output folder configured');
     return;
   }
 
   // Check if already processed
   if (converter.outputExists(sourcePath, outputFolder)) {
-    mainWindow.webContents.send('conversion-status', 'File already processed, skipping');
-    mainWindow.webContents.send('camera-detected', { status: 'skipped', file: path.basename(sourcePath) });
+    mainWindow!.webContents.send('conversion-status', 'File already processed, skipping');
+    mainWindow!.webContents.send('camera-detected', { status: 'skipped', file: path.basename(sourcePath) } as CameraDetectionData);
     return;
   }
 
@@ -239,17 +214,17 @@ async function copyAndConvert(sourcePath) {
 
   try {
     // Copy file
-    mainWindow.webContents.send('conversion-status', 'Copying file from camera...');
+    mainWindow!.webContents.send('conversion-status', 'Copying file from camera...');
     await converter.copyFile(sourcePath, tempPath);
-    mainWindow.webContents.send('copy-progress', 100);
-    mainWindow.webContents.send('conversion-status', 'Copy complete, starting conversion...');
+    mainWindow!.webContents.send('copy-progress', 100);
+    mainWindow!.webContents.send('conversion-status', 'Copy complete, starting conversion...');
 
     // Trigger conversion via the existing convert-video handler logic
-    mainWindow.webContents.send('auto-convert-ready', tempPath);
+    mainWindow!.webContents.send('auto-convert-ready', tempPath);
   } catch (err) {
     console.error('Error copying file:', err);
-    if (err.message !== 'Copy cancelled') {
-      mainWindow.webContents.send('conversion-status', `Error copying file: ${err.message}`);
+    if ((err as Error).message !== 'Copy cancelled') {
+      mainWindow!.webContents.send('conversion-status', `Error copying file: ${(err as Error).message}`);
     }
     // Clean up temp file if exists
     if (fs.existsSync(tempPath)) {
@@ -258,7 +233,7 @@ async function copyAndConvert(sourcePath) {
   }
 }
 
-function pollDrives() {
+function pollDrives(): void {
   if (isProcessingCamera) return;
 
   try {
@@ -266,7 +241,7 @@ function pollDrives() {
     const currentSet = new Set(currentMountPoints);
 
     // Check for new mount points
-    const newMounts = [];
+    const newMounts: string[] = [];
     for (const mountPath of currentMountPoints) {
       if (!knownMountPoints.has(mountPath)) {
         newMounts.push(mountPath);
@@ -281,19 +256,19 @@ function pollDrives() {
       const clipPath = checkForCameraDrive(newMounts);
       if (clipPath) {
         isProcessingCamera = true;
-        mainWindow.webContents.send('camera-detected', { status: 'detected', clipPath });
+        mainWindow!.webContents.send('camera-detected', { status: 'detected', clipPath } as CameraDetectionData);
 
         const latestVideo = getLatestVideoFile(clipPath);
         if (latestVideo) {
-          mainWindow.webContents.send('camera-detected', {
+          mainWindow!.webContents.send('camera-detected', {
             status: 'found-video',
             file: path.basename(latestVideo)
-          });
+          } as CameraDetectionData);
           copyAndConvert(latestVideo).finally(() => {
             isProcessingCamera = false;
           });
         } else {
-          mainWindow.webContents.send('conversion-status', 'No video files found on camera');
+          mainWindow!.webContents.send('conversion-status', 'No video files found on camera');
           isProcessingCamera = false;
         }
       }
@@ -303,7 +278,7 @@ function pollDrives() {
   }
 }
 
-function startUsbMonitoring() {
+function startUsbMonitoring(): void {
   if (usbMonitoringInterval) return;
 
   // Initialize known mount points
@@ -313,7 +288,7 @@ function startUsbMonitoring() {
   console.log('USB monitoring started');
 }
 
-function stopUsbMonitoring() {
+function stopUsbMonitoring(): void {
   if (usbMonitoringInterval) {
     clearInterval(usbMonitoringInterval);
     usbMonitoringInterval = null;
@@ -322,7 +297,7 @@ function stopUsbMonitoring() {
 }
 
 // USB Monitoring IPC Handlers
-ipcMain.handle('toggle-usb-monitoring', async (event, enabled) => {
+ipcMain.handle('toggle-usb-monitoring', async (_event: IpcMainInvokeEvent, enabled: boolean) => {
   const settings = loadSettings();
   settings.usbMonitoringEnabled = enabled;
   saveSettings(settings);
@@ -344,19 +319,22 @@ ipcMain.handle('get-usb-monitoring-status', async () => {
 });
 
 // Start drive monitoring (always active for video list updates)
-function startDriveMonitoring() {
+function startDriveMonitoring(): void {
   if (driveMonitoringInterval) return;
   driveMonitoringInterval = setInterval(pollDrivesWithNotification, 2000);
   console.log('Drive monitoring started');
 }
 
-function stopDriveMonitoring() {
+function stopDriveMonitoring(): void {
   if (driveMonitoringInterval) {
     clearInterval(driveMonitoringInterval);
     driveMonitoringInterval = null;
     console.log('Drive monitoring stopped');
   }
 }
+
+// Track previous drive status for change detection
+let previousDriveConnected = false;
 
 // Start monitoring on app ready if enabled in settings
 app.on('ready', () => {
@@ -383,7 +361,7 @@ app.on('before-quit', () => {
 // Facebook IPC Handlers
 const REDIRECT_URI = 'http://localhost:8888/callback';
 
-ipcMain.handle('save-facebook-credentials', async (event, credentials) => {
+ipcMain.handle('save-facebook-credentials', async (_event: IpcMainInvokeEvent, credentials: { appId: string; appSecret: string }) => {
   const settings = loadSettings();
   if (!settings.facebook) {
     settings.facebook = {};
@@ -428,15 +406,15 @@ ipcMain.handle('start-facebook-auth', async () => {
     const code = await authPromise;
 
     // Exchange code for token
-    mainWindow.webContents.send('facebook-status', 'Exchanging authorization code...');
+    mainWindow!.webContents.send('facebook-status', 'Exchanging authorization code...');
     const shortToken = await facebook.exchangeCodeForToken(code, appId, appSecret, REDIRECT_URI);
 
     // Get long-lived token
-    mainWindow.webContents.send('facebook-status', 'Getting long-lived token...');
+    mainWindow!.webContents.send('facebook-status', 'Getting long-lived token...');
     const longToken = await facebook.getLongLivedToken(shortToken, appId, appSecret);
 
     // Get user's pages
-    mainWindow.webContents.send('facebook-status', 'Fetching your pages...');
+    mainWindow!.webContents.send('facebook-status', 'Fetching your pages...');
     const pages = await facebook.getUserPages(longToken);
 
     if (pages.length === 0) {
@@ -450,7 +428,7 @@ ipcMain.handle('start-facebook-auth', async () => {
   }
 });
 
-ipcMain.handle('select-facebook-page', async (event, pageInfo) => {
+ipcMain.handle('select-facebook-page', async (_event: IpcMainInvokeEvent, pageInfo: FacebookPage) => {
   const settings = loadSettings();
   if (!settings.facebook) {
     settings.facebook = {};
@@ -473,7 +451,7 @@ ipcMain.handle('disconnect-facebook', async () => {
   return true;
 });
 
-ipcMain.handle('post-to-facebook', async (event, videoPath) => {
+ipcMain.handle('post-to-facebook', async (_event: IpcMainInvokeEvent, videoPath: string) => {
   const settings = loadSettings();
   if (!settings.facebook || !settings.facebook.pageAccessToken) {
     throw new Error('Facebook not connected');
@@ -483,17 +461,17 @@ ipcMain.handle('post-to-facebook', async (event, videoPath) => {
 
   try {
     const result = await facebook.uploadVideoToPage(
-      pageId,
+      pageId!,
       pageAccessToken,
       videoPath,
       new Date(),
-      (percent) => mainWindow.webContents.send('facebook-upload-progress', percent),
-      (message) => mainWindow.webContents.send('facebook-status', message)
+      (percent: number) => mainWindow!.webContents.send('facebook-upload-progress', percent),
+      (message: string) => mainWindow!.webContents.send('facebook-status', message)
     );
 
     return result;
   } catch (err) {
-    mainWindow.webContents.send('facebook-status', `Upload failed: ${err.message}`);
+    mainWindow!.webContents.send('facebook-status', `Upload failed: ${(err as Error).message}`);
     throw err;
   }
 });
@@ -519,16 +497,14 @@ ipcMain.handle('list-video-files', async () => {
         const stats = fs.statSync(fullPath);
 
         // Determine copy/convert status
-        let status = 'on-camera'; // default
+        let status: 'on-camera' | 'copied' | 'converted' = 'on-camera';
         if (outputFolder) {
-          // Check if fully converted (in a date subfolder with _1080p suffix)
           if (converter.outputExists(fullPath, outputFolder)) {
             status = 'converted';
           } else {
-            // Check if copied but not yet converted (temp_ file in output folder)
-            const tempPath = path.join(outputFolder, `temp_${f}`);
+            const tempFilePath = path.join(outputFolder, `temp_${f}`);
             const copiedPath = path.join(outputFolder, f);
-            if (fs.existsSync(tempPath) || fs.existsSync(copiedPath)) {
+            if (fs.existsSync(tempFilePath) || fs.existsSync(copiedPath)) {
               status = 'copied';
             }
           }
@@ -572,7 +548,7 @@ ipcMain.handle('list-converted-videos', async () => {
   const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
   try {
-    const files = [];
+    const files: Array<{ name: string; path: string; size: number; mtime: number; folder: string }> = [];
 
     // Scan date-named subfolders for converted (_1080p) videos
     const entries = fs.readdirSync(outputFolder, { withFileTypes: true });
@@ -606,10 +582,7 @@ ipcMain.handle('list-converted-videos', async () => {
   }
 });
 
-// Track previous drive status for change detection
-let previousDriveConnected = false;
-
-function pollDrivesWithNotification() {
+function pollDrivesWithNotification(): void {
   const mountPoints = getMountPoints();
   const clipPath = checkForCameraDrive(mountPoints);
   const isConnected = clipPath !== null;
