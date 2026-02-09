@@ -13,12 +13,17 @@ contextBridge.exposeInMainWorld('api', {
   // USB Monitoring APIs
   toggleUsbMonitoring: (enabled: boolean) => ipcRenderer.invoke('toggle-usb-monitoring', enabled),
   getUsbMonitoringStatus: () => ipcRenderer.invoke('get-usb-monitoring-status'),
+  toggleAutoConvert: (enabled: boolean) => ipcRenderer.invoke('toggle-auto-convert', enabled),
+  getAutoConvertStatus: () => ipcRenderer.invoke('get-auto-convert-status'),
   onCameraDetected: (callback: (data: unknown) => void) =>
     ipcRenderer.on('camera-detected', (_event, data: unknown) => callback(data)),
   onCopyProgress: (callback: (percent: number) => void) =>
     ipcRenderer.on('copy-progress', (_event, percent: number) => callback(percent)),
   onAutoConvertReady: (callback: (filePath: string) => void) =>
     ipcRenderer.on('auto-convert-ready', (_event, filePath: string) => callback(filePath)),
+  // Camera folder selection
+  selectCameraFolder: () => ipcRenderer.invoke('select-camera-folder'),
+  clearCameraFolder: () => ipcRenderer.invoke('clear-camera-folder'),
   // Video List APIs
   listVideoFiles: () => ipcRenderer.invoke('list-video-files'),
   listConvertedVideos: () => ipcRenderer.invoke('list-converted-videos'),

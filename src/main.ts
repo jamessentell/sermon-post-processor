@@ -298,21 +298,24 @@ function pollDrives(): void {
     if (newMounts.length > 0) {
       const clipPath = checkForCameraDrive(newMounts);
       if (clipPath) {
-        isProcessingCamera = true;
         mainWindow!.webContents.send('camera-detected', { status: 'detected', clipPath } as CameraDetectionData);
 
-        const latestVideo = getLatestVideoFile(clipPath);
-        if (latestVideo) {
-          mainWindow!.webContents.send('camera-detected', {
-            status: 'found-video',
-            file: path.basename(latestVideo)
-          } as CameraDetectionData);
-          copyAndConvert(latestVideo).finally(() => {
+        // Only auto copy+convert if the setting is enabled
+        if (db.getSetting<boolean>('autoConvertEnabled') !== false) {
+          isProcessingCamera = true;
+          const latestVideo = getLatestVideoFile(clipPath);
+          if (latestVideo) {
+            mainWindow!.webContents.send('camera-detected', {
+              status: 'found-video',
+              file: path.basename(latestVideo)
+            } as CameraDetectionData);
+            copyAndConvert(latestVideo).finally(() => {
+              isProcessingCamera = false;
+            });
+          } else {
+            mainWindow!.webContents.send('conversion-status', 'No video files found on camera');
             isProcessingCamera = false;
-          });
-        } else {
-          mainWindow!.webContents.send('conversion-status', 'No video files found on camera');
-          isProcessingCamera = false;
+          }
         }
       }
     }
@@ -356,6 +359,15 @@ ipcMain.handle('get-usb-monitoring-status', async () => {
     enabled: db.getSetting<boolean>('usbMonitoringEnabled') || false,
     active: usbMonitoringInterval !== null
   };
+});
+
+ipcMain.handle('toggle-auto-convert', async (_event: IpcMainInvokeEvent, enabled: boolean) => {
+  db.setSetting('autoConvertEnabled', enabled);
+  return enabled;
+});
+
+ipcMain.handle('get-auto-convert-status', async () => {
+  return db.getSetting<boolean>('autoConvertEnabled') !== false || false;
 });
 
 // Start drive monitoring (always active for video list updates)
@@ -505,6 +517,8 @@ ipcMain.handle('post-to-facebook', async (_event: IpcMainInvokeEvent, videoPath:
       (message: string) => mainWindow!.webContents.send('facebook-status', message)
     );
 
+    db.markFacebookUploaded(videoPath);
+
     return result;
   } catch (err) {
     mainWindow!.webContents.send('facebook-status', `Upload failed: ${(err as Error).message}`);
@@ -512,11 +526,42 @@ ipcMain.handle('post-to-facebook', async (_event: IpcMainInvokeEvent, videoPath:
   }
 });
 
+// Manual camera folder selection
+let manualCameraFolder: string | null = null;
+
+ipcMain.handle('select-camera-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openDirectory'],
+    title: 'Select Camera Video Folder'
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  manualCameraFolder = result.filePaths[0];
+  return manualCameraFolder;
+});
+
+ipcMain.handle('clear-camera-folder', async () => {
+  manualCameraFolder = null;
+  return true;
+});
+
 // Video List IPC Handlers
 ipcMain.handle('list-video-files', async () => {
   const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
   const mountPoints = getMountPoints();
-  const clipPath = checkForCameraDrive(mountPoints);
+  let clipPath = checkForCameraDrive(mountPoints);
+
+  // Fall back to manually selected folder
+  if (!clipPath && manualCameraFolder) {
+    if (fs.existsSync(manualCameraFolder)) {
+      clipPath = manualCameraFolder;
+    } else {
+      manualCameraFolder = null;
+    }
+  }
 
   if (!clipPath) {
     return { connected: false, files: [] };
@@ -574,7 +619,7 @@ ipcMain.handle('get-drive-status', async () => {
 ipcMain.handle('list-converted-videos', async () => {
   try {
     const convertedRecords = db.getVideosByStatus('converted');
-    const files: Array<{ name: string; path: string; size: number; mtime: number; folder: string }> = [];
+    const files: Array<{ name: string; path: string; size: number; mtime: number; folder: string; uploaded: boolean }> = [];
 
     for (const record of convertedRecords) {
       if (!record.converted_path || !fs.existsSync(record.converted_path)) {
@@ -587,7 +632,8 @@ ipcMain.handle('list-converted-videos', async () => {
         path: record.converted_path,
         size: stats.size,
         mtime: stats.mtime.getTime(),
-        folder
+        folder,
+        uploaded: !!record.facebook_uploaded_at
       });
     }
 

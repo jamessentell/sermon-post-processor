@@ -12,6 +12,7 @@ interface ConvertedVideo {
   size: number;
   mtime: number;
   folder?: string;
+  uploaded?: boolean;
 }
 
 interface FacebookPage {
@@ -47,6 +48,10 @@ interface ElectronApi {
   onStatus: (callback: (message: string) => void) => void;
   toggleUsbMonitoring: (enabled: boolean) => Promise<boolean>;
   getUsbMonitoringStatus: () => Promise<{ enabled: boolean; active: boolean }>;
+  toggleAutoConvert: (enabled: boolean) => Promise<boolean>;
+  getAutoConvertStatus: () => Promise<boolean>;
+  selectCameraFolder: () => Promise<string | null>;
+  clearCameraFolder: () => Promise<boolean>;
   onCameraDetected: (callback: (data: CameraDetectionData) => void) => void;
   onCopyProgress: (callback: (percent: number) => void) => void;
   onAutoConvertReady: (callback: (filePath: string) => void) => void;
@@ -70,16 +75,17 @@ declare global {
   }
 }
 
-const convertBtn = document.getElementById('convertBtn') as HTMLButtonElement;
 const cancelBtn = document.getElementById('cancelBtn') as HTMLButtonElement;
+const cancelContainer = document.getElementById('cancelContainer') as HTMLElement;
 const outputFolderBtn = document.getElementById('outputFolderBtn') as HTMLButtonElement;
 const folderDisplay = document.getElementById('folderDisplay') as HTMLElement;
 const progressBar = document.getElementById('progressBar') as HTMLElement;
 const status = document.getElementById('status') as HTMLElement;
-const statusMeta = document.getElementById('statusMeta') as HTMLElement;
 const usbToggle = document.getElementById('usbToggle') as HTMLInputElement;
+const autoConvertToggle = document.getElementById('autoConvertToggle') as HTMLInputElement;
 const usbIndicator = document.getElementById('usbIndicator') as HTMLElement;
 const usbStatus = document.getElementById('usbStatus') as HTMLElement;
+const browseCameraBtn = document.getElementById('browseCameraBtn') as HTMLButtonElement;
 
 // Page elements
 const navItems = document.querySelectorAll('.nav-item') as NodeListOf<HTMLElement>;
@@ -91,12 +97,13 @@ const cameraVideoList = document.getElementById('cameraVideoList') as HTMLElemen
 const convertedVideoList = document.getElementById('convertedVideoList') as HTMLElement;
 const cameraEmptyState = document.getElementById('cameraEmptyState') as HTMLElement;
 const convertedEmptyState = document.getElementById('convertedEmptyState') as HTMLElement;
+const cameraSortSelect = document.getElementById('cameraSortSelect') as HTMLSelectElement;
+const convertedSortSelect = document.getElementById('convertedSortSelect') as HTMLSelectElement;
 
 // Facebook elements
 const facebookStatusContainer = document.getElementById('facebookStatusContainer') as HTMLElement;
 const facebookStatusText = document.getElementById('facebookStatus') as HTMLElement;
 const facebookConnectBtn = document.getElementById('facebookConnectBtn') as HTMLButtonElement;
-const postToFacebookBtn = document.getElementById('postToFacebookBtn') as HTMLButtonElement;
 const setupModal = document.getElementById('setupModal') as HTMLElement;
 const pageModal = document.getElementById('pageModal') as HTMLElement;
 const appIdInput = document.getElementById('appIdInput') as HTMLInputElement;
@@ -120,12 +127,13 @@ let convertedVideos: ConvertedVideo[] = [];
 let connectedDrivePath: string | null = null;
 let isDriveConnected = false;
 let isUsbMonitoringEnabled = false;
+let manualCameraFolder: string | null = null;
 
 function showCancelButton(show: boolean): void {
   if (show) {
-    cancelBtn.classList.remove('hidden');
+    cancelContainer.classList.remove('hidden');
   } else {
-    cancelBtn.classList.add('hidden');
+    cancelContainer.classList.add('hidden');
   }
 }
 
@@ -226,8 +234,21 @@ async function refreshAllVideos(): Promise<void> {
   await Promise.all([refreshCameraVideos(), refreshConvertedVideos()]);
 }
 
+function sortVideos<T extends { name: string; size: number; mtime: number }>(videos: T[], sortKey: string): T[] {
+  const sorted = [...videos];
+  switch (sortKey) {
+    case 'date-desc': sorted.sort((a, b) => b.mtime - a.mtime); break;
+    case 'date-asc': sorted.sort((a, b) => a.mtime - b.mtime); break;
+    case 'name-asc': sorted.sort((a, b) => a.name.localeCompare(b.name)); break;
+    case 'name-desc': sorted.sort((a, b) => b.name.localeCompare(a.name)); break;
+    case 'size-desc': sorted.sort((a, b) => b.size - a.size); break;
+    case 'size-asc': sorted.sort((a, b) => a.size - b.size); break;
+    default: sorted.sort((a, b) => b.mtime - a.mtime);
+  }
+  return sorted;
+}
+
 function renderCameraVideoList(): void {
-  // Clear existing items (except empty state)
   const existingItems = cameraVideoList.querySelectorAll('.video-item');
   existingItems.forEach(item => item.remove());
 
@@ -236,18 +257,16 @@ function renderCameraVideoList(): void {
     return;
   }
 
-  // Hide empty state
   cameraEmptyState.style.display = 'none';
 
-  // Render video items
-  cameraVideos.forEach(video => {
+  const sorted = sortVideos(cameraVideos, cameraSortSelect.value);
+  sorted.forEach(video => {
     const item = createVideoItem(video, 'camera');
     cameraVideoList.appendChild(item);
   });
 }
 
 function renderConvertedVideoList(): void {
-  // Clear existing items (except empty state)
   const existingItems = convertedVideoList.querySelectorAll('.video-item');
   existingItems.forEach(item => item.remove());
 
@@ -256,11 +275,10 @@ function renderConvertedVideoList(): void {
     return;
   }
 
-  // Hide empty state
   convertedEmptyState.style.display = 'none';
 
-  // Render video items
-  convertedVideos.forEach(video => {
+  const sorted = sortVideos(convertedVideos, convertedSortSelect.value);
+  sorted.forEach(video => {
     const item = createVideoItem(video, 'converted');
     convertedVideoList.appendChild(item);
   });
@@ -269,17 +287,36 @@ function renderConvertedVideoList(): void {
 function createVideoItem(video: VideoFile | ConvertedVideo, type: 'camera' | 'converted'): HTMLElement {
   const item = document.createElement('div');
   item.className = 'video-item';
-  if (selectedFile === video.path) {
-    item.classList.add('selected');
-  }
   item.dataset.path = video.path;
   item.dataset.type = type;
 
   let badgeHtml = '';
-  if (type === 'camera' && (video as VideoFile).status === 'copied') {
-    badgeHtml = '<span class="video-status-badge copied">Copied</span>';
-  } else if (type === 'camera' && (video as VideoFile).status === 'converted') {
-    badgeHtml = '<span class="video-status-badge converted">Converted</span>';
+  let actionsHtml = '';
+  const videoStatus = type === 'camera' ? (video as VideoFile).status : undefined;
+
+  if (type === 'camera') {
+    if (videoStatus === 'copied') {
+      badgeHtml = '<span class="video-status-badge copied">Copied</span>';
+    } else if (videoStatus === 'converted') {
+      badgeHtml = '<span class="video-status-badge converted">Converted</span>';
+    }
+
+    // Show convert button for on-camera and copied videos
+    if (videoStatus !== 'converted') {
+      actionsHtml = `<div class="video-item-actions">
+        <button class="video-action-btn convert" data-action="convert" ${isConverting || !outputFolder ? 'disabled' : ''}>Convert</button>
+      </div>`;
+    }
+  } else {
+    // Converted videos
+    if ((video as ConvertedVideo).uploaded) {
+      badgeHtml = '<span class="video-status-badge uploaded">Uploaded</span>';
+    }
+    if (isFacebookConnected) {
+      actionsHtml = `<div class="video-item-actions">
+        <button class="video-action-btn facebook" data-action="post-facebook" ${isPostingToFacebook ? 'disabled' : ''}>Post</button>
+      </div>`;
+    }
   }
 
   let metaText = `${formatFileSize(video.size)} • ${formatDate(video.mtime)}`;
@@ -294,8 +331,26 @@ function createVideoItem(video: VideoFile | ConvertedVideo, type: 'camera' | 'co
       <div class="video-item-meta">${metaText}</div>
     </div>
     ${badgeHtml}
+    ${actionsHtml}
   `;
-  item.addEventListener('click', () => selectVideoFromList(video, type));
+
+  // Wire up action buttons (stop propagation so they don't trigger row select)
+  const convertBtnEl = item.querySelector('[data-action="convert"]');
+  if (convertBtnEl) {
+    convertBtnEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      startConversion(video.path);
+    });
+  }
+
+  const postBtnEl = item.querySelector('[data-action="post-facebook"]');
+  if (postBtnEl) {
+    postBtnEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      postToFacebook(video.path);
+    });
+  }
+
   return item;
 }
 
@@ -333,23 +388,10 @@ function showConvertedEmptyState(message?: string): void {
   }
 }
 
-function selectVideoFromList(video: VideoFile | ConvertedVideo, type: 'camera' | 'converted'): void {
+function selectVideoFromList(video: VideoFile | ConvertedVideo, _type: 'camera' | 'converted'): void {
   selectedFile = video.path;
   progressBar.style.width = '0%';
   setProgressState(null);
-
-  // Update button states based on video type
-  if (type === 'camera') {
-    lastConvertedPath = null;
-    updateConvertButton();
-    updatePostToFacebookButton();
-  } else {
-    // Converted videos can be posted but not converted again
-    lastConvertedPath = video.path;
-    convertBtn.disabled = true;
-    updatePostToFacebookButton();
-  }
-
   updateStatus();
 
   // Update selected state in both lists
@@ -378,13 +420,15 @@ async function init(): Promise<void> {
     outputFolder = savedFolder;
     folderDisplay.textContent = savedFolder;
     folderDisplay.classList.add('has-value');
-    updateConvertButton();
   }
 
   // Load USB monitoring status
   const usbMonitoring = await window.api.getUsbMonitoringStatus();
   usbToggle.checked = usbMonitoring.enabled;
   isUsbMonitoringEnabled = usbMonitoring.enabled;
+
+  // Load auto-convert status
+  autoConvertToggle.checked = await window.api.getAutoConvertStatus();
 
   // Load initial drive connection status
   const driveStatus = await window.api.getDriveStatus();
@@ -419,11 +463,21 @@ function updateFacebookUI(fbStatus: FacebookStatus): void {
     facebookStatusContainer.classList.remove('connected');
     facebookConnectBtn.textContent = fbStatus.hasCredentials ? 'Connect' : 'Setup';
   }
-  updatePostToFacebookButton();
+  // Re-render lists to update Post buttons based on connection state
+  renderCameraVideoList();
+  renderConvertedVideoList();
 }
 
-function updatePostToFacebookButton(): void {
-  postToFacebookBtn.disabled = !lastConvertedPath || !isFacebookConnected || isPostingToFacebook || isConverting;
+function disableAllVideoActions(): void {
+  document.querySelectorAll('.video-action-btn').forEach(btn => {
+    (btn as HTMLButtonElement).disabled = true;
+  });
+}
+
+function enableAllVideoActions(): void {
+  // Re-render lists to restore correct button states
+  renderCameraVideoList();
+  renderConvertedVideoList();
 }
 
 function showSetupModal(): void {
@@ -475,11 +529,7 @@ function updateUsbIndicator(override?: string): void {
   if (override === 'detected') {
     usbStatus.textContent = 'Camera detected!';
     usbIndicator.classList.add('detected');
-    return;
-  }
-  if (override === 'copying') {
-    usbStatus.textContent = 'Copying from camera...';
-    usbIndicator.classList.add('detected');
+    browseCameraBtn.classList.add('hidden');
     return;
   }
 
@@ -487,28 +537,27 @@ function updateUsbIndicator(override?: string): void {
   if (isDriveConnected) {
     usbStatus.textContent = 'USB Connected';
     usbIndicator.classList.add('connected');
+    browseCameraBtn.classList.add('hidden');
   } else if (isUsbMonitoringEnabled) {
     usbStatus.textContent = 'Monitoring for USB';
     usbIndicator.classList.add('active');
+    browseCameraBtn.classList.add('hidden');
+  } else if (manualCameraFolder) {
+    const folderName = manualCameraFolder.split('/').pop() || manualCameraFolder;
+    usbStatus.textContent = folderName;
+    usbIndicator.classList.add('connected');
+    browseCameraBtn.textContent = 'Change Folder';
+    browseCameraBtn.classList.remove('hidden');
   } else {
-    usbStatus.textContent = 'USB Not Connected';
+    usbStatus.textContent = 'No Camera';
+    browseCameraBtn.textContent = 'Select Camera Folder';
+    browseCameraBtn.classList.remove('hidden');
   }
 }
 
-function updateConvertButton(): void {
-  convertBtn.disabled = !selectedFile || !outputFolder || isConverting;
-}
 
 function updateStatus(): void {
-  if (!outputFolder && !selectedFile) {
-    status.textContent = 'Select an output folder and video file to begin';
-  } else if (!outputFolder) {
-    status.textContent = 'Select an output folder';
-  } else if (!selectedFile) {
-    status.textContent = 'Select a video file';
-  } else {
-    status.textContent = 'Ready to convert';
-  }
+  status.textContent = '';
   setStatusState(null);
 }
 
@@ -520,24 +569,25 @@ outputFolderBtn.addEventListener('click', async () => {
     outputFolder = folderPath;
     folderDisplay.textContent = folderPath;
     folderDisplay.classList.add('has-value');
-    updateConvertButton();
     updateStatus();
+    // Re-render to enable convert buttons now that folder is set
+    renderCameraVideoList();
   }
 });
 
-convertBtn.addEventListener('click', async () => {
-  if (!selectedFile || !outputFolder || isConverting) return;
+async function startConversion(filePath: string): Promise<void> {
+  if (!outputFolder || isConverting) return;
 
+  selectedFile = filePath;
   isConverting = true;
-  convertBtn.disabled = true;
+  disableAllVideoActions();
   outputFolderBtn.disabled = true;
   showCancelButton(true);
-  updatePostToFacebookButton();
   setProgressState('active');
   setStatusState('working');
 
   try {
-    const outputPath = await window.api.convertVideo(selectedFile);
+    const outputPath = await window.api.convertVideo(filePath);
     lastConvertedPath = outputPath;
     status.textContent = `Saved: ${outputPath}`;
     setStatusState('success');
@@ -548,14 +598,12 @@ convertBtn.addEventListener('click', async () => {
     setProgressState('error');
   } finally {
     isConverting = false;
-    updateConvertButton();
     outputFolderBtn.disabled = false;
     showCancelButton(false);
-    updatePostToFacebookButton();
-    // Refresh converted videos list after conversion
-    refreshConvertedVideos();
+    // Refresh both lists to update statuses and re-enable buttons
+    refreshAllVideos();
   }
-});
+}
 
 cancelBtn.addEventListener('click', async () => {
   if (!isConverting) return;
@@ -571,25 +619,20 @@ cancelBtn.addEventListener('click', async () => {
   } finally {
     cancelBtn.disabled = false;
     isConverting = false;
-    updateConvertButton();
     outputFolderBtn.disabled = false;
     usbToggle.disabled = false;
     showCancelButton(false);
     setProgressState(null);
     progressBar.style.width = '0%';
-    statusMeta.textContent = '';
-    // Reset USB indicator
-    updateUsbIndicator();
-    // Reset selection
+      updateUsbIndicator();
     selectedFile = null;
-    // Deselect any selected video items
     document.querySelectorAll('.video-item.selected').forEach(item => item.classList.remove('selected'));
+    enableAllVideoActions();
   }
 });
 
 window.api.onProgress((percent: number) => {
   progressBar.style.width = `${percent}%`;
-  statusMeta.textContent = `${percent.toFixed(0)}%`;
 });
 
 window.api.onStatus((message: string) => {
@@ -605,12 +648,36 @@ window.api.onStatus((message: string) => {
   }
 });
 
+// Sort change handlers
+cameraSortSelect.addEventListener('change', () => renderCameraVideoList());
+convertedSortSelect.addEventListener('change', () => renderConvertedVideoList());
+
+// Browse camera folder button
+browseCameraBtn.addEventListener('click', async () => {
+  const folder = await window.api.selectCameraFolder();
+  if (folder) {
+    manualCameraFolder = folder;
+    updateUsbIndicator();
+    await refreshCameraVideos();
+  }
+});
+
 // USB monitoring toggle
 usbToggle.addEventListener('change', async () => {
   const enabled = usbToggle.checked;
   isUsbMonitoringEnabled = enabled;
   await window.api.toggleUsbMonitoring(enabled);
+  // Clear manual folder when enabling USB monitoring
+  if (enabled && manualCameraFolder) {
+    manualCameraFolder = null;
+    await window.api.clearCameraFolder();
+  }
   updateUsbIndicator();
+});
+
+// Auto-convert toggle
+autoConvertToggle.addEventListener('change', async () => {
+  await window.api.toggleAutoConvert(autoConvertToggle.checked);
 });
 
 // Camera detection events
@@ -620,28 +687,25 @@ window.api.onCameraDetected((data: CameraDetectionData) => {
       updateUsbIndicator('detected');
       status.textContent = 'Camera detected, searching for videos...';
       setStatusState('working');
-      // Disable UI when camera is detected
       outputFolderBtn.disabled = true;
-      convertBtn.disabled = true;
+      disableAllVideoActions();
       usbToggle.disabled = true;
       break;
     case 'found-video':
-      updateUsbIndicator('copying');
+      updateUsbIndicator();
       status.textContent = `Found: ${data.file}`;
       setStatusState('working');
       setProgressState('active');
-      // Show cancel button for copy operation
       showCancelButton(true);
-      isConverting = true; // Treat copy as part of conversion process
+      isConverting = true;
       break;
     case 'skipped':
       updateUsbIndicator();
       status.textContent = `${data.file} already processed, skipping`;
       setStatusState('success');
-      // Re-enable UI
       outputFolderBtn.disabled = false;
       usbToggle.disabled = false;
-      updateConvertButton();
+      enableAllVideoActions();
       break;
   }
 });
@@ -649,7 +713,6 @@ window.api.onCameraDetected((data: CameraDetectionData) => {
 // Copy progress
 window.api.onCopyProgress((percent: number) => {
   progressBar.style.width = `${percent}%`;
-  statusMeta.textContent = `Copying: ${percent.toFixed(0)}%`;
   if (percent < 100) {
     status.textContent = `Copying from camera...`;
     setStatusState('working');
@@ -660,20 +723,15 @@ window.api.onCopyProgress((percent: number) => {
 window.api.onAutoConvertReady(async (filePath: string) => {
   updateUsbIndicator();
   isConverting = true;
-  convertBtn.disabled = true;
+  disableAllVideoActions();
   outputFolderBtn.disabled = true;
   usbToggle.disabled = true;
   showCancelButton(true);
-  updatePostToFacebookButton();
   setProgressState('active');
   setStatusState('working');
 
-  // Set the selected file for auto-conversion
   selectedFile = filePath;
-
-  // Reset progress bar for conversion (was showing copy progress)
   progressBar.style.width = '0%';
-  statusMeta.textContent = '';
 
   try {
     const outputPath = await window.api.convertVideo(filePath);
@@ -687,13 +745,10 @@ window.api.onAutoConvertReady(async (filePath: string) => {
     setProgressState('error');
   } finally {
     isConverting = false;
-    updateConvertButton();
     outputFolderBtn.disabled = false;
     usbToggle.disabled = false;
     showCancelButton(false);
-    updatePostToFacebookButton();
-    // Refresh converted videos list after conversion
-    refreshConvertedVideos();
+    refreshAllVideos();
   }
 });
 
@@ -763,18 +818,17 @@ async function startFacebookAuth(): Promise<void> {
   }
 }
 
-postToFacebookBtn.addEventListener('click', async () => {
-  if (!lastConvertedPath || !isFacebookConnected || isPostingToFacebook) return;
+async function postToFacebook(videoPath: string): Promise<void> {
+  if (!isFacebookConnected || isPostingToFacebook) return;
 
   isPostingToFacebook = true;
-  postToFacebookBtn.disabled = true;
+  disableAllVideoActions();
   progressBar.style.width = '0%';
   setProgressState('active');
   setStatusState('working');
-  statusMeta.textContent = '';
 
   try {
-    const result = await window.api.postToFacebook(lastConvertedPath);
+    const result = await window.api.postToFacebook(videoPath);
     if (result.success) {
       status.textContent = 'Video posted to Facebook!';
       setStatusState('success');
@@ -786,14 +840,15 @@ postToFacebookBtn.addEventListener('click', async () => {
     setProgressState('error');
   } finally {
     isPostingToFacebook = false;
-    updatePostToFacebookButton();
+    refreshConvertedVideos();
   }
-});
+}
 
 // Facebook progress and status listeners
 window.api.onFacebookUploadProgress((percent: number) => {
   progressBar.style.width = `${percent}%`;
-  statusMeta.textContent = `Uploading: ${percent}%`;
+  status.textContent = `Uploading to Facebook: ${percent}%`;
+  setStatusState('working');
 });
 
 window.api.onFacebookStatus((message: string) => {

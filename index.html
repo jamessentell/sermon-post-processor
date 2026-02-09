@@ -72,6 +72,26 @@
       gap: 16px;
     }
 
+    .browse-camera-btn {
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .browse-camera-btn:hover {
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+    }
+
+    .browse-camera-btn.hidden {
+      display: none;
+    }
+
     .usb-indicator {
       display: flex;
       align-items: center;
@@ -231,21 +251,58 @@
       color: var(--accent-green);
     }
 
-    /* Actions Card */
-    .actions-card {
-      grid-column: 1 / -1;
+    /* Cancel Container */
+    .cancel-container {
+      display: flex;
+      justify-content: center;
     }
 
-    .actions-card .card-icon {
-      background: rgba(163, 113, 247, 0.15);
-      color: var(--accent-purple);
+    .cancel-container.hidden {
+      display: none;
     }
 
-    .actions-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-      margin-top: auto;
+    /* Video item action buttons */
+    .video-item-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .video-action-btn {
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+      border: 1px solid transparent;
+    }
+
+    .video-action-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .video-action-btn.convert {
+      background: linear-gradient(135deg, #238636, #2ea043);
+      border-color: #238636;
+      color: white;
+    }
+
+    .video-action-btn.convert:hover:not(:disabled) {
+      background: linear-gradient(135deg, #2ea043, #3fb950);
+      border-color: #3fb950;
+    }
+
+    .video-action-btn.facebook {
+      background: linear-gradient(135deg, #1877f2, #0d65d9);
+      border-color: #1877f2;
+      color: white;
+    }
+
+    .video-action-btn.facebook:hover:not(:disabled) {
+      background: linear-gradient(135deg, #1a85ff, #1877f2);
     }
 
     .action-btn {
@@ -337,6 +394,12 @@
     .setting-value {
       font-size: 0.8rem;
       color: var(--text-secondary);
+    }
+
+    .setting-description {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 2px;
     }
 
     /* Toggle Switch */
@@ -726,8 +789,33 @@
     .panel-header {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 8px;
       margin-bottom: 12px;
+    }
+
+    .sort-select {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      color: var(--text-secondary);
+      font-size: 0.7rem;
+      padding: 4px 8px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .sort-select:hover {
+      border-color: var(--text-secondary);
+    }
+
+    .sort-select:focus {
+      border-color: var(--accent-blue);
+    }
+
+    .sort-select option {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
     }
 
     .panel-title {
@@ -827,6 +915,12 @@
       border: 1px solid rgba(63, 185, 80, 0.3);
     }
 
+    .video-status-badge.uploaded {
+      background: rgba(88, 166, 255, 0.15);
+      color: var(--accent-blue);
+      border: 1px solid rgba(88, 166, 255, 0.3);
+    }
+
     .video-item-meta .folder-label {
       color: var(--text-muted);
     }
@@ -860,10 +954,6 @@
       max-width: 300px;
     }
 
-    /* Actions Card in Content Area */
-    .actions-card {
-      grid-column: auto;
-    }
   </style>
 </head>
 <body>
@@ -871,6 +961,7 @@
   <header class="header">
     <h1>Sermon Post Processor</h1>
     <div class="header-status">
+      <button class="browse-camera-btn" id="browseCameraBtn">Select Camera Folder</button>
       <div class="usb-indicator" id="usbIndicator">
         <span class="dot"></span>
         <span id="usbStatus">USB Monitoring Off</span>
@@ -901,6 +992,14 @@
           <div class="card video-list-card">
             <div class="panel-header">
               <span class="panel-title">Camera Videos</span>
+              <select class="sort-select" id="cameraSortSelect">
+                <option value="date-desc">Date (Newest)</option>
+                <option value="date-asc">Date (Oldest)</option>
+                <option value="name-asc">Name (A-Z)</option>
+                <option value="name-desc">Name (Z-A)</option>
+                <option value="size-desc">Size (Largest)</option>
+                <option value="size-asc">Size (Smallest)</option>
+              </select>
             </div>
             <div class="video-list" id="cameraVideoList">
               <div class="empty-state" id="cameraEmptyState">
@@ -913,6 +1012,14 @@
           <div class="card video-list-card">
             <div class="panel-header">
               <span class="panel-title">Converted Videos</span>
+              <select class="sort-select" id="convertedSortSelect">
+                <option value="date-desc">Date (Newest)</option>
+                <option value="date-asc">Date (Oldest)</option>
+                <option value="name-asc">Name (A-Z)</option>
+                <option value="name-desc">Name (Z-A)</option>
+                <option value="size-desc">Size (Largest)</option>
+                <option value="size-asc">Size (Smallest)</option>
+              </select>
             </div>
             <div class="video-list" id="convertedVideoList">
               <div class="empty-state" id="convertedEmptyState">
@@ -924,23 +1031,11 @@
           </div>
         </div>
 
-        <!-- Actions Card -->
-        <div class="card actions-card">
-          <div class="card-header">
-            <div class="card-icon">&#9889;</div>
-            <span class="card-title">Actions</span>
-          </div>
-          <div class="actions-grid">
-            <button class="action-btn primary" id="convertBtn" disabled>
-              <span>&#9654;</span> Convert to 1080p
-            </button>
-            <button class="action-btn facebook" id="postToFacebookBtn" disabled>
-              <span>&#402;</span> Post to Facebook
-            </button>
-            <button class="action-btn cancel hidden" id="cancelBtn">
-              <span>&#10005;</span> Cancel
-            </button>
-          </div>
+        <!-- Cancel button shown during conversion -->
+        <div id="cancelContainer" class="cancel-container hidden">
+          <button class="action-btn cancel" id="cancelBtn">
+            <span>&#10005;</span> Cancel
+          </button>
         </div>
       </main>
 
@@ -967,6 +1062,16 @@
                 <span class="toggle-slider"></span>
               </label>
             </div>
+            <div class="setting-row">
+              <div>
+                <span class="setting-label">Auto-convert latest file</span>
+                <div class="setting-description">Automatically copy and convert the newest video when a camera is detected</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="autoConvertToggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
             <div class="setting-row facebook-row">
               <div class="facebook-status" id="facebookStatusContainer">
                 <span class="dot"></span>
@@ -987,9 +1092,7 @@
     </div>
     <div class="status-content">
       <div class="status-message" id="status">
-        Select an output folder and video file to begin
       </div>
-      <div class="status-meta" id="statusMeta"></div>
     </div>
   </footer>
 

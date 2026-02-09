@@ -11,6 +11,8 @@ export function initDatabase(userDataPath: string): void {
 
   // Enable WAL mode for better concurrent performance
   db.pragma('journal_mode = WAL');
+  // Wait up to 5 seconds if another process holds the write lock
+  db.pragma('busy_timeout = 5000');
 
   // Create tables
   db.exec(`
@@ -34,6 +36,12 @@ export function initDatabase(userDataPath: string): void {
       UNIQUE(source_name, source_size)
     );
   `);
+
+  // Add facebook_uploaded_at column if it doesn't exist
+  const columns = db.pragma('table_info(videos)') as Array<{ name: string }>;
+  if (!columns.some(c => c.name === 'facebook_uploaded_at')) {
+    db.exec('ALTER TABLE videos ADD COLUMN facebook_uploaded_at TEXT');
+  }
 
   // Migrate settings.json if it exists
   const settingsJsonPath = path.join(userDataPath, 'settings.json');
@@ -149,6 +157,16 @@ export function updateVideoStatus(id: number, status: VideoStatus, paths?: { cop
     db.prepare('UPDATE videos SET status = ?, updated_at = datetime(\'now\') WHERE id = ?')
       .run(status, id);
   }
+}
+
+export function markFacebookUploaded(convertedPath: string): void {
+  db.prepare("UPDATE videos SET facebook_uploaded_at = datetime('now'), updated_at = datetime('now') WHERE converted_path = ?")
+    .run(convertedPath);
+}
+
+export function isFacebookUploaded(convertedPath: string): boolean {
+  const row = db.prepare('SELECT facebook_uploaded_at FROM videos WHERE converted_path = ?').get(convertedPath) as { facebook_uploaded_at: string | null } | undefined;
+  return !!(row && row.facebook_uploaded_at);
 }
 
 export function cleanupOrphanedCopies(): void {

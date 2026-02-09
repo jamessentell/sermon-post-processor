@@ -94,6 +94,7 @@ export interface VideoRecord {
   copied_path?: string | null;
   converted_path?: string | null;
   status: VideoStatus;
+  facebook_uploaded_at?: string | null;
   created_at?: string;
   updated_at?: string;
 }
