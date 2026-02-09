@@ -88,21 +88,50 @@ ipcMain.handle('get-output-folder', async () => {
   return db.getSetting<string>('outputFolder') || null;
 });
 
-// Handle video conversion
+// Handle video conversion — copies to output folder first, then converts
 ipcMain.handle('convert-video', async (_event: IpcMainInvokeEvent, inputPath: string) => {
   const outputFolder = db.getSetting<string>('outputFolder');
-  const outputPath = await converter.convertVideo(inputPath, outputFolder!);
+  if (!outputFolder) {
+    throw new Error('Please select an output folder first');
+  }
+
+  const basename = path.basename(inputPath);
+  let convertInput = inputPath;
+
+  // If this is already a temp file in the output folder (from auto-detect), skip the copy
+  const isAlreadyCopied = basename.startsWith('temp_') && inputPath.startsWith(outputFolder);
+
+  if (!isAlreadyCopied) {
+    // Copy to output folder first
+    const tempPath = path.join(outputFolder, `temp_${basename}`);
+    mainWindow!.webContents.send('conversion-status', 'Copying file to output folder...');
+    await converter.copyFile(inputPath, tempPath);
+    mainWindow!.webContents.send('copy-progress', 100);
+    mainWindow!.webContents.send('conversion-status', 'Copy complete, starting conversion...');
+
+    // Update DB status to copied
+    try {
+      const stats = fs.statSync(inputPath);
+      const record = db.getVideoBySource(basename, stats.size);
+      if (record) {
+        db.updateVideoStatus(record.id!, 'copied', { copied: tempPath });
+      }
+    } catch {
+      // Source may not be a tracked camera file
+    }
+
+    convertInput = tempPath;
+  }
+
+  const outputPath = await converter.convertVideo(convertInput, outputFolder);
 
   // Update video status in database
-  const basename = path.basename(inputPath);
   if (basename.startsWith('temp_')) {
-    // Look up by copied path for auto-detected camera files
     const record = db.getVideoByCopiedPath(inputPath);
     if (record) {
       db.updateVideoStatus(record.id!, 'converted', { converted: outputPath });
     }
   } else {
-    // Manual conversion — try to find by source name/size
     try {
       const stats = fs.statSync(inputPath);
       const record = db.getVideoBySource(basename, stats.size);
@@ -110,7 +139,7 @@ ipcMain.handle('convert-video', async (_event: IpcMainInvokeEvent, inputPath: st
         db.updateVideoStatus(record.id!, 'converted', { converted: outputPath });
       }
     } catch {
-      // File may not be on camera, that's fine
+      // Source may not be a tracked camera file
     }
   }
 
