@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('api', {
   // Camera folder selection
   selectCameraFolder: () => ipcRenderer.invoke('select-camera-folder'),
   clearCameraFolder: () => ipcRenderer.invoke('clear-camera-folder'),
+  deleteCameraFile: (filePath: string) => ipcRenderer.invoke('delete-camera-file', filePath),
   // Video List APIs
   listVideoFiles: () => ipcRenderer.invoke('list-video-files'),
   listConvertedVideos: () => ipcRenderer.invoke('list-converted-videos'),
@@ -42,5 +43,8 @@ contextBridge.exposeInMainWorld('api', {
   onFacebookUploadProgress: (callback: (percent: number) => void) =>
     ipcRenderer.on('facebook-upload-progress', (_event, percent: number) => callback(percent)),
   onFacebookStatus: (callback: (message: string) => void) =>
-    ipcRenderer.on('facebook-status', (_event, message: string) => callback(message))
+    ipcRenderer.on('facebook-status', (_event, message: string) => callback(message)),
+  onDriveSpaceUpdated: (callback: (data: { freeBytes: number | null }) => void) =>
+    ipcRenderer.on('drive-space-updated', (_event, data) => callback(data)),
+  ejectCameraDrive: () => ipcRenderer.invoke('eject-camera-drive')
 });

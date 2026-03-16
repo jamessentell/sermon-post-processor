@@ -13,400 +13,593 @@
     }
 
     :root {
-      --bg-primary: #0d1117;
-      --bg-secondary: #161b22;
-      --bg-tertiary: #21262d;
-      --bg-card: #1c2128;
-      --border-color: #30363d;
-      --text-primary: #e6edf3;
-      --text-secondary: #8b949e;
-      --text-muted: #6e7681;
-      --accent-blue: #58a6ff;
-      --accent-green: #3fb950;
-      --accent-red: #f85149;
-      --accent-orange: #d29922;
-      --accent-purple: #a371f7;
+      --bg-0: #08070f;
+      --bg-1: #0e0c1a;
+      --bg-2: #141222;
+      --bg-3: #1a1830;
+      --bg-4: #21203a;
+      --border: #2c2945;
+      --border-hi: #3e3a60;
+      --text-1: #eae8f8;
+      --text-2: #6e6a92;
+      --text-3: #3e3c58;
+      --amber: #c8883a;
+      --amber-hi: #e0a050;
+      --amber-dim: rgba(200, 136, 58, 0.14);
+      --amber-border: rgba(200, 136, 58, 0.32);
+      --green: #38c47c;
+      --green-dim: rgba(56, 196, 124, 0.12);
+      --green-border: rgba(56, 196, 124, 0.28);
+      --red: #c85050;
+      --red-dim: rgba(200, 80, 80, 0.12);
+      --red-border: rgba(200, 80, 80, 0.32);
+      --blue: #7880d0;
+      --blue-dim: rgba(120, 128, 208, 0.12);
+      --blue-border: rgba(120, 128, 208, 0.30);
+      --teal: #18cdb4;
+      --teal-dim: rgba(24, 205, 180, 0.10);
+      --teal-border: rgba(24, 205, 180, 0.28);
+      --radius: 8px;
+      --radius-sm: 5px;
+      --t: 0.15s ease;
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Ubuntu', sans-serif;
+      background: var(--bg-0);
+      color: var(--text-1);
       height: 100vh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
     }
 
-    /* Header */
+    /* ─── Header ─────────────────────────────────────────────── */
     .header {
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--border-color);
-      padding: 16px 24px;
+      background: var(--bg-1);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      height: 48px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-shrink: 0;
     }
 
     .header h1 {
-      font-size: 1.25rem;
+      font-size: 0.875rem;
       font-weight: 600;
-      color: var(--text-primary);
+      color: var(--text-1);
+      letter-spacing: 0.02em;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
 
-    .header h1::before {
-      content: '';
-      width: 8px;
-      height: 8px;
-      background: var(--accent-green);
-      border-radius: 50%;
-      box-shadow: 0 0 8px var(--accent-green);
+    .header-wordmark {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-gem {
+      width: 22px;
+      height: 22px;
+      background: var(--amber-dim);
+      border: 1px solid var(--amber-border);
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
     }
 
     .header-status {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 10px;
     }
 
     .browse-camera-btn {
-      padding: 6px 14px;
-      font-size: 0.8rem;
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
+      padding: 5px 12px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
       border-radius: 20px;
-      color: var(--text-secondary);
+      color: var(--text-2);
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all var(--t);
     }
 
     .browse-camera-btn:hover {
-      border-color: var(--accent-blue);
-      color: var(--accent-blue);
+      border-color: var(--amber);
+      color: var(--amber);
     }
 
-    .browse-camera-btn.hidden {
-      display: none;
+    .browse-camera-btn.hidden { display: none; }
+
+    .eject-btn {
+      padding: 5px 12px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--text-2);
+      cursor: pointer;
+      transition: all var(--t);
     }
+
+    .eject-btn:hover:not(:disabled) {
+      background: var(--red);
+      border-color: var(--red);
+      color: var(--bg-0);
+    }
+
+    .eject-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .eject-btn.hidden { display: none; }
 
     .usb-indicator {
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 0.8rem;
-      color: var(--text-secondary);
-      padding: 6px 12px;
-      background: var(--bg-tertiary);
+      gap: 7px;
+      font-size: 0.75rem;
+      color: var(--text-2);
+      padding: 5px 12px;
+      background: var(--bg-3);
       border-radius: 20px;
-      border: 1px solid var(--border-color);
+      border: 1px solid var(--border);
     }
 
     .usb-indicator .dot {
-      width: 6px;
-      height: 6px;
+      width: 5px;
+      height: 5px;
       border-radius: 50%;
-      background: var(--text-muted);
+      background: var(--text-3);
+      flex-shrink: 0;
     }
 
     .usb-indicator.active .dot {
-      background: var(--accent-green);
-      box-shadow: 0 0 6px var(--accent-green);
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
       animation: pulse 2s infinite;
     }
 
+    .usb-indicator.connected {
+      border-color: var(--amber-border);
+      color: var(--amber);
+    }
+
     .usb-indicator.connected .dot {
-      background: var(--accent-green);
-      box-shadow: 0 0 6px var(--accent-green);
+      background: var(--amber);
+      box-shadow: 0 0 5px var(--amber);
+    }
+
+    .usb-indicator.detected {
+      border-color: rgba(56, 196, 124, 0.3);
+      color: var(--green);
     }
 
     .usb-indicator.detected .dot {
-      background: var(--accent-orange);
-      box-shadow: 0 0 6px var(--accent-orange);
+      background: var(--green);
+      box-shadow: 0 0 5px var(--green);
+      animation: pulse 1s infinite;
     }
 
     @keyframes pulse {
       0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
+      50% { opacity: 0.35; }
     }
 
-    /* Main Content */
-    .main-content {
+    /* ─── App Shell ──────────────────────────────────────────── */
+    .app-container {
+      display: flex;
       flex: 1;
-      padding: 24px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      overflow-y: auto;
-    }
-
-    /* Cards */
-    .card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .card-header {
-      display: flex;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-
-    .card-title {
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-secondary);
-    }
-
-    .card-icon {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1rem;
-      margin-right: 12px;
-    }
-
-    /* Input Card */
-    .input-card .card-icon {
-      background: rgba(88, 166, 255, 0.15);
-      color: var(--accent-blue);
-    }
-
-    .file-info {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .file-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .file-label {
-      font-size: 0.7rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      width: 50px;
-    }
-
-    .file-path {
-      flex: 1;
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      padding: 10px 14px;
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      white-space: nowrap;
       overflow: hidden;
-      text-overflow: ellipsis;
     }
 
-    .file-path.has-value {
-      color: var(--text-primary);
-    }
-
-    .btn-icon {
-      width: 36px;
-      height: 36px;
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      background: var(--bg-tertiary);
-      color: var(--text-secondary);
-      cursor: pointer;
+    /* ─── Sidebar ────────────────────────────────────────────── */
+    .sidebar {
+      width: 56px;
+      background: var(--bg-1);
+      border-right: 1px solid var(--border);
       display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 0;
+      gap: 4px;
+    }
+
+    .nav-item {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      transition: all 0.2s;
+      color: var(--text-3);
+      cursor: pointer;
+      transition: all var(--t);
+      border: 1px solid transparent;
+      position: relative;
     }
 
-    .btn-icon:hover:not(:disabled) {
-      background: var(--bg-secondary);
-      border-color: var(--accent-blue);
-      color: var(--accent-blue);
+    .nav-item:hover {
+      background: var(--bg-3);
+      color: var(--text-2);
     }
 
-    .btn-icon:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+    .nav-item.active {
+      background: var(--amber-dim);
+      border-color: var(--amber-border);
+      color: var(--amber);
     }
 
-    /* Output Card */
-    .output-card .card-icon {
-      background: rgba(63, 185, 80, 0.15);
-      color: var(--accent-green);
+    .nav-item .nav-icon {
+      font-size: 1rem;
+      line-height: 1;
     }
 
-    /* Cancel Container */
-    .cancel-container {
-      display: flex;
-      justify-content: center;
-    }
-
-    .cancel-container.hidden {
+    .nav-item .nav-label {
       display: none;
     }
 
-    /* Video item action buttons */
+    /* ─── Content Area ───────────────────────────────────────── */
+    .content-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg-1);
+    }
+
+    /* ─── Pages ──────────────────────────────────────────────── */
+    .page {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .page.hidden { display: none; }
+
+    /* ─── Video Panels ───────────────────────────────────────── */
+    .video-panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .video-list-card {
+      flex: 1;
+      min-height: 0;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .panel-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-3);
+    }
+
+    .drive-space-bar {
+      font-size: 0.7rem;
+      color: var(--amber);
+      padding: 5px 8px;
+      background: var(--amber-dim);
+      border: 1px solid var(--amber-border);
+      border-radius: var(--radius-sm);
+      margin-bottom: 10px;
+    }
+
+    .drive-space-bar.hidden { display: none; }
+
+    .sort-select {
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-2);
+      font-size: 0.68rem;
+      padding: 3px 6px;
+      cursor: pointer;
+      outline: none;
+      transition: border-color var(--t);
+    }
+
+    .sort-select:hover { border-color: var(--border-hi); }
+    .sort-select:focus { border-color: var(--amber); }
+    .sort-select option { background: var(--bg-2); }
+
+    /* ─── Video List ─────────────────────────────────────────── */
+    .video-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .video-list::-webkit-scrollbar { width: 4px; }
+    .video-list::-webkit-scrollbar-track { background: transparent; }
+    .video-list::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    .video-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 11px;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all var(--t);
+    }
+
+    .video-item:hover {
+      border-color: var(--border-hi);
+      background: var(--bg-4);
+    }
+
+    .video-item.selected {
+      border-color: var(--amber-border);
+      background: var(--amber-dim);
+    }
+
+    .video-item .video-icon {
+      font-size: 1rem;
+      flex-shrink: 0;
+      opacity: 0.6;
+    }
+
+    .video-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .video-item-name {
+      font-size: 0.8rem;
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', monospace;
+      color: var(--text-1);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: -0.01em;
+    }
+
+    .video-item-meta {
+      font-size: 0.68rem;
+      color: var(--text-2);
+      margin-top: 2px;
+    }
+
+    /* ─── Status Badges ──────────────────────────────────────── */
+    .video-status-badge {
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 2px 7px;
+      border-radius: 20px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .video-status-badge.copied {
+      background: var(--amber-dim);
+      color: var(--amber);
+      border: 1px solid var(--amber-border);
+    }
+
+    .video-status-badge.converted {
+      background: var(--green-dim);
+      color: var(--green);
+      border: 1px solid var(--green-border);
+    }
+
+    .video-status-badge.uploaded {
+      background: var(--green-dim);
+      color: var(--green);
+      border: 1px solid var(--green-border);
+    }
+
+    /* ─── Video Action Buttons ───────────────────────────────── */
     .video-item-actions {
       display: flex;
-      gap: 6px;
+      gap: 5px;
       flex-shrink: 0;
     }
 
     .video-action-btn {
-      padding: 5px 12px;
-      border-radius: 6px;
-      font-size: 0.75rem;
-      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 0.7rem;
+      font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all var(--t);
       white-space: nowrap;
       border: 1px solid transparent;
+      letter-spacing: 0.01em;
     }
 
     .video-action-btn:disabled {
-      opacity: 0.4;
+      opacity: 0.35;
       cursor: not-allowed;
     }
 
     .video-action-btn.convert {
-      background: linear-gradient(135deg, #238636, #2ea043);
-      border-color: #238636;
-      color: white;
+      background: var(--amber-dim);
+      border-color: var(--amber-border);
+      color: var(--amber);
     }
 
     .video-action-btn.convert:hover:not(:disabled) {
-      background: linear-gradient(135deg, #2ea043, #3fb950);
-      border-color: #3fb950;
+      background: var(--amber);
+      color: var(--bg-0);
     }
 
     .video-action-btn.facebook {
-      background: linear-gradient(135deg, #1877f2, #0d65d9);
-      border-color: #1877f2;
-      color: white;
+      background: var(--blue-dim);
+      border-color: var(--blue-border);
+      color: var(--blue);
     }
 
     .video-action-btn.facebook:hover:not(:disabled) {
-      background: linear-gradient(135deg, #1a85ff, #1877f2);
+      background: var(--blue);
+      color: var(--bg-0);
     }
 
-    .action-btn {
-      padding: 14px 20px;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      background: var(--bg-tertiary);
-      color: var(--text-primary);
-      font-size: 0.9rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
+    .video-action-btn.delete {
+      background: transparent;
+      border-color: var(--red-border);
+      color: var(--red);
+      padding: 4px 7px;
+      font-size: 0.8rem;
+      line-height: 1;
+    }
+
+    .video-action-btn.delete:hover:not(:disabled) {
+      background: var(--red);
+      border-color: var(--red);
+      color: var(--bg-0);
+    }
+
+    /* ─── Empty State ────────────────────────────────────────── */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 20px;
+      text-align: center;
+    }
+
+    .empty-state .empty-icon {
+      font-size: 2rem;
+      margin-bottom: 12px;
+      opacity: 0.25;
+    }
+
+    .empty-state .empty-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-2);
+      margin-bottom: 6px;
+    }
+
+    .empty-state .empty-description {
+      font-size: 0.75rem;
+      color: var(--text-3);
+      max-width: 220px;
+      line-height: 1.5;
+    }
+
+    /* ─── Settings Card ──────────────────────────────────────── */
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .card-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-sm);
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      font-size: 0.85rem;
     }
 
-    .action-btn:hover:not(:disabled) {
-      background: var(--bg-secondary);
-      border-color: var(--text-secondary);
+    .card-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-3);
     }
 
-    .action-btn:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-
-    .action-btn.primary {
-      background: linear-gradient(135deg, #238636, #2ea043);
-      border-color: #238636;
-    }
-
-    .action-btn.primary:hover:not(:disabled) {
-      background: linear-gradient(135deg, #2ea043, #3fb950);
-      border-color: #3fb950;
-    }
-
-    .action-btn.facebook {
-      background: linear-gradient(135deg, #1877f2, #0d65d9);
-      border-color: #1877f2;
-    }
-
-    .action-btn.facebook:hover:not(:disabled) {
-      background: linear-gradient(135deg, #1a85ff, #1877f2);
-    }
-
-    .action-btn.cancel {
-      background: transparent;
-      border-color: var(--accent-red);
-      color: var(--accent-red);
-    }
-
-    .action-btn.cancel:hover:not(:disabled) {
-      background: rgba(248, 81, 73, 0.15);
-    }
-
-    .action-btn.hidden {
-      display: none;
-    }
-
-    /* Settings Card */
     .settings-card .card-icon {
-      background: rgba(210, 153, 34, 0.15);
-      color: var(--accent-orange);
+      background: rgba(120, 128, 208, 0.12);
+      color: var(--blue);
+      border: 1px solid rgba(120, 128, 208, 0.2);
     }
 
     .settings-rows {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 6px;
     }
 
     .setting-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 10px 14px;
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
+      padding: 11px 14px;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: border-color var(--t);
+    }
+
+    .setting-row:hover {
+      border-color: var(--border-hi);
     }
 
     .setting-label {
-      font-size: 0.85rem;
-      color: var(--text-primary);
+      font-size: 0.82rem;
+      color: var(--text-1);
     }
 
     .setting-value {
-      font-size: 0.8rem;
-      color: var(--text-secondary);
+      font-size: 0.75rem;
+      color: var(--text-2);
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .setting-description {
-      font-size: 0.75rem;
-      color: var(--text-muted);
+      font-size: 0.7rem;
+      color: var(--text-3);
       margin-top: 2px;
     }
 
-    /* Toggle Switch */
+    /* ─── Toggle Switch ──────────────────────────────────────── */
     .toggle-switch {
       position: relative;
-      width: 44px;
-      height: 24px;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
     }
 
     .toggle-switch input {
@@ -418,550 +611,426 @@
     .toggle-slider {
       position: absolute;
       cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
-      transition: 0.3s;
-      border-radius: 24px;
+      inset: 0;
+      background: var(--bg-4);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      transition: 0.25s;
     }
 
     .toggle-slider:before {
-      position: absolute;
       content: "";
-      height: 18px;
-      width: 18px;
+      position: absolute;
+      height: 16px;
+      width: 16px;
       left: 2px;
       bottom: 2px;
-      background-color: var(--text-secondary);
-      transition: 0.3s;
+      background: var(--text-3);
       border-radius: 50%;
+      transition: 0.25s;
     }
 
     input:checked + .toggle-slider {
-      background-color: rgba(63, 185, 80, 0.3);
-      border-color: var(--accent-green);
+      background: var(--amber-dim);
+      border-color: var(--amber);
     }
 
     input:checked + .toggle-slider:before {
-      transform: translateX(20px);
-      background-color: var(--accent-green);
+      transform: translateX(18px);
+      background: var(--amber);
     }
 
-    /* Facebook Status */
-    .facebook-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
+    /* ─── Facebook row ───────────────────────────────────────── */
+    .facebook-row { }
 
     .facebook-status {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 7px;
     }
 
     .facebook-status .dot {
-      width: 6px;
-      height: 6px;
+      width: 5px;
+      height: 5px;
       border-radius: 50%;
-      background: var(--text-muted);
+      background: var(--text-3);
+      flex-shrink: 0;
     }
 
     .facebook-status.connected .dot {
-      background: var(--accent-green);
+      background: var(--green);
+      box-shadow: 0 0 4px var(--green);
     }
 
     .facebook-btn {
-      padding: 6px 14px;
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      background: var(--bg-primary);
-      color: var(--text-secondary);
-      font-size: 0.8rem;
+      padding: 5px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-4);
+      color: var(--text-2);
+      font-size: 0.75rem;
+      font-weight: 500;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all var(--t);
     }
 
     .facebook-btn:hover {
-      border-color: var(--accent-blue);
-      color: var(--accent-blue);
+      background: var(--blue);
+      border-color: var(--blue);
+      color: var(--bg-0);
     }
 
-    /* Bottom Status Bar */
+    /* ─── Utility Buttons ────────────────────────────────────── */
+    .btn-icon {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-3);
+      color: var(--text-2);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--t);
+    }
+
+    .btn-icon:hover:not(:disabled) {
+      border-color: var(--amber);
+      color: var(--amber);
+    }
+
+    .btn-icon:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .action-btn {
+      padding: 7px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-3);
+      color: var(--text-1);
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--t);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .action-btn:hover:not(:disabled) {
+      background: var(--bg-4);
+      border-color: var(--border-hi);
+    }
+
+    .action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .action-btn.primary {
+      background: var(--amber-dim);
+      border-color: var(--amber-border);
+      color: var(--amber);
+    }
+
+    .action-btn.primary:hover:not(:disabled) {
+      background: var(--amber);
+      color: var(--bg-0);
+    }
+
+    .action-btn.facebook {
+      background: var(--blue-dim);
+      border-color: var(--blue-border);
+      color: var(--blue);
+    }
+
+    .action-btn.facebook:hover:not(:disabled) {
+      background: var(--blue);
+      color: var(--bg-0);
+    }
+
+    .action-btn.cancel {
+      background: transparent;
+      border-color: var(--red-border);
+      color: var(--red);
+      padding: 4px 12px;
+      font-size: 0.75rem;
+    }
+
+    .action-btn.cancel:hover:not(:disabled) {
+      background: var(--red-dim);
+    }
+
+    .action-btn.hidden { display: none; }
+
+    /* ─── Cancel container ───────────────────────────────────── */
+    .cancel-container {
+      display: flex;
+      align-items: center;
+    }
+
+    .cancel-container.hidden { display: none; }
+
+    /* ─── Status Bar ─────────────────────────────────────────── */
     .status-bar {
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border-color);
-      padding: 0;
+      background: var(--bg-1);
+      border-top: 1px solid var(--border);
       display: flex;
       flex-direction: column;
+      flex-shrink: 0;
     }
 
     .progress-track {
-      height: 3px;
-      background: var(--bg-tertiary);
-      position: relative;
+      height: 2px;
+      background: var(--bg-3);
       overflow: hidden;
     }
 
     .progress-bar {
       height: 100%;
       width: 0%;
-      background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+      background: var(--amber);
       transition: width 0.3s ease;
     }
 
     .progress-bar.active {
-      box-shadow: 0 0 10px var(--accent-blue);
+      background: var(--amber);
+      box-shadow: 0 0 8px var(--amber);
     }
 
     .progress-bar.success {
-      background: linear-gradient(90deg, var(--accent-green), #2ea043);
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
     }
 
     .progress-bar.error {
-      background: var(--accent-red);
+      background: var(--red);
     }
 
     .status-content {
-      padding: 12px 24px;
+      padding: 8px 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      min-height: 36px;
     }
 
     .status-message {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
+      font-size: 0.75rem;
+      color: var(--text-2);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 7px;
     }
 
-    .status-message.success {
-      color: var(--accent-green);
-    }
-
-    .status-message.error {
-      color: var(--accent-red);
-    }
-
-    .status-message.working {
-      color: var(--accent-blue);
-    }
+    .status-message.success { color: var(--green); }
+    .status-message.error { color: var(--red); }
+    .status-message.working { color: var(--amber); }
 
     .status-message .spinner {
-      width: 14px;
-      height: 14px;
-      border: 2px solid var(--border-color);
-      border-top-color: var(--accent-blue);
+      width: 12px;
+      height: 12px;
+      border: 1.5px solid var(--border-hi);
+      border-top-color: var(--amber);
       border-radius: 50%;
-      animation: spin 1s linear infinite;
+      animation: spin 0.8s linear infinite;
     }
 
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     .status-meta {
-      font-size: 0.75rem;
-      color: var(--text-muted);
+      font-size: 0.7rem;
+      color: var(--text-3);
     }
 
-    /* Modals */
+    /* ─── Modals ─────────────────────────────────────────────── */
     .modal-overlay {
       display: none;
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(4px);
+      inset: 0;
+      background: rgba(8, 7, 15, 0.82);
+      backdrop-filter: blur(6px);
       align-items: center;
       justify-content: center;
       z-index: 1000;
     }
 
-    .modal-overlay.visible {
-      display: flex;
-    }
+    .modal-overlay.visible { display: flex; }
 
     .modal-content {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
+      background: var(--bg-2);
+      border: 1px solid var(--border-hi);
       border-radius: 12px;
       padding: 24px;
       width: 90%;
-      max-width: 400px;
+      max-width: 380px;
       max-height: 80vh;
       overflow-y: auto;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.5);
     }
 
     .modal-content h2 {
-      margin-bottom: 20px;
-      color: var(--text-primary);
-      font-size: 1.1rem;
+      margin-bottom: 18px;
+      color: var(--text-1);
+      font-size: 1rem;
       font-weight: 600;
     }
 
     .modal-content label {
       display: block;
-      color: var(--text-secondary);
-      font-size: 0.75rem;
-      margin-bottom: 6px;
+      color: var(--text-3);
+      font-size: 0.65rem;
+      font-weight: 700;
+      margin-bottom: 5px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.08em;
     }
 
     .modal-content input {
       width: 100%;
-      padding: 12px;
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      background: var(--bg-tertiary);
-      color: var(--text-primary);
-      font-size: 0.9rem;
-      margin-bottom: 16px;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-3);
+      color: var(--text-1);
+      font-size: 0.85rem;
+      margin-bottom: 14px;
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+      transition: border-color var(--t);
     }
 
     .modal-content input:focus {
       outline: none;
-      border-color: var(--accent-blue);
+      border-color: var(--amber);
     }
 
     .modal-content p {
-      color: var(--text-muted);
-      font-size: 0.8rem;
-      margin-bottom: 16px;
-      line-height: 1.5;
+      color: var(--text-2);
+      font-size: 0.75rem;
+      margin-bottom: 14px;
+      line-height: 1.55;
     }
 
     .modal-buttons {
       display: flex;
-      gap: 10px;
-      margin-top: 20px;
+      gap: 8px;
+      margin-top: 18px;
     }
 
     .modal-buttons button {
       flex: 1;
-      padding: 10px 16px;
-      border-radius: 6px;
-      font-size: 0.85rem;
+      padding: 9px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 0.8rem;
+      font-weight: 500;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all var(--t);
     }
 
     .modal-btn-secondary {
       background: transparent;
-      border: 1px solid var(--border-color);
-      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      color: var(--text-2);
     }
 
     .modal-btn-secondary:hover {
-      border-color: var(--text-secondary);
-      color: var(--text-primary);
+      border-color: var(--border-hi);
+      color: var(--text-1);
     }
 
     .modal-btn-primary {
-      background: var(--accent-blue);
-      border: none;
-      color: white;
+      background: var(--amber);
+      border: 1px solid transparent;
+      color: var(--bg-0);
+      font-weight: 600;
     }
 
-    .modal-btn-primary:hover {
-      background: #4393e4;
-    }
+    .modal-btn-primary:hover { background: var(--amber-hi); }
 
     .page-list {
-      max-height: 250px;
+      max-height: 240px;
       overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
 
     .page-item {
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 14px;
-      margin-bottom: 8px;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all var(--t);
     }
 
     .page-item:hover {
-      border-color: var(--accent-blue);
-      background: var(--bg-secondary);
+      border-color: var(--amber-border);
+      background: var(--bg-4);
     }
 
     .page-item .page-name {
-      color: var(--text-primary);
+      color: var(--text-1);
       font-weight: 500;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
     }
 
     .page-item .page-id {
-      color: var(--text-muted);
-      font-size: 0.75rem;
-      margin-top: 4px;
-    }
-
-    /* Sidebar Navigation */
-    .app-container {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
-
-    .sidebar {
-      width: 200px;
-      background: var(--bg-secondary);
-      border-right: 1px solid var(--border-color);
-      display: flex;
-      flex-direction: column;
-      padding: 16px 0;
-    }
-
-    .nav-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 20px;
-      color: var(--text-secondary);
-      cursor: pointer;
-      transition: all 0.2s;
-      border-left: 3px solid transparent;
-    }
-
-    .nav-item:hover {
-      background: var(--bg-tertiary);
-      color: var(--text-primary);
-    }
-
-    .nav-item.active {
-      background: var(--bg-tertiary);
-      color: var(--accent-blue);
-      border-left-color: var(--accent-blue);
-    }
-
-    .nav-item .nav-icon {
-      font-size: 1.1rem;
-    }
-
-    .nav-item .nav-label {
-      font-size: 0.9rem;
-      font-weight: 500;
-    }
-
-    /* Content Area */
-    .content-area {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    /* Pages */
-    .page {
-      flex: 1;
-      padding: 24px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .page.hidden {
-      display: none;
-    }
-
-
-    /* Video Panels */
-    .video-panels {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      flex: 1;
-      min-height: 0;
-    }
-
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-
-    .sort-select {
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      color: var(--text-secondary);
+      color: var(--text-3);
       font-size: 0.7rem;
-      padding: 4px 8px;
-      cursor: pointer;
-      outline: none;
+      margin-top: 3px;
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
     }
 
-    .sort-select:hover {
-      border-color: var(--text-secondary);
-    }
-
-    .sort-select:focus {
-      border-color: var(--accent-blue);
-    }
-
-    .sort-select option {
-      background: var(--bg-secondary);
-      color: var(--text-primary);
-    }
-
-    .panel-title {
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-secondary);
-    }
-
-    /* Video List */
-    .video-list-card {
+    /* ─── File rows (settings) ───────────────────────────────── */
+    .file-info {
       flex: 1;
-      min-height: 200px;
-    }
-
-    .video-list-card .card-icon {
-      background: rgba(88, 166, 255, 0.15);
-      color: var(--accent-blue);
-    }
-
-    .video-list {
-      flex: 1;
-      overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
     }
 
-    .video-item {
+    .file-row {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 12px 14px;
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s;
+      gap: 10px;
     }
 
-    .video-item:hover {
-      border-color: var(--text-secondary);
-      background: var(--bg-secondary);
+    .file-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: var(--text-3);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      width: 44px;
     }
 
-    .video-item.selected {
-      border-color: var(--accent-blue);
-      background: rgba(88, 166, 255, 0.1);
-    }
-
-    .video-item .video-icon {
-      font-size: 1.2rem;
-      color: var(--accent-blue);
-    }
-
-    .video-item-info {
+    .file-path {
       flex: 1;
-      min-width: 0;
-    }
-
-    .video-item-name {
-      font-size: 0.9rem;
-      color: var(--text-primary);
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      font-size: 0.78rem;
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+      color: var(--text-2);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .video-item-meta {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      margin-top: 2px;
-    }
+    .file-path.has-value { color: var(--text-1); }
 
-    /* Video Status Badges */
-    .video-status-badge {
-      font-size: 0.65rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      padding: 3px 8px;
-      border-radius: 10px;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .video-status-badge.copied {
-      background: rgba(210, 153, 34, 0.15);
-      color: var(--accent-orange);
-      border: 1px solid rgba(210, 153, 34, 0.3);
-    }
-
-    .video-status-badge.converted {
-      background: rgba(63, 185, 80, 0.15);
-      color: var(--accent-green);
-      border: 1px solid rgba(63, 185, 80, 0.3);
-    }
-
-    .video-status-badge.uploaded {
-      background: rgba(88, 166, 255, 0.15);
-      color: var(--accent-blue);
-      border: 1px solid rgba(88, 166, 255, 0.3);
-    }
-
-    .video-item-meta .folder-label {
-      color: var(--text-muted);
-    }
-
-    /* Empty State */
-    .empty-state {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 40px 20px;
-      text-align: center;
-    }
-
-    .empty-state .empty-icon {
-      font-size: 3rem;
-      color: var(--text-muted);
-      margin-bottom: 16px;
-    }
-
-    .empty-state .empty-title {
-      font-size: 1rem;
-      color: var(--text-secondary);
-      margin-bottom: 8px;
-    }
-
-    .empty-state .empty-description {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      max-width: 300px;
-    }
-
+    /* ─── Hidden utility ─────────────────────────────────────── */
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
   <!-- Header -->
   <header class="header">
-    <h1>Sermon Post Processor</h1>
+    <div class="header-wordmark">
+      <div class="header-gem">✦</div>
+      <h1>Sermon Post Processor</h1>
+    </div>
     <div class="header-status">
       <button class="browse-camera-btn" id="browseCameraBtn">Select Camera Folder</button>
+      <button class="eject-btn hidden" id="ejectBtn">⏏ Eject</button>
       <div class="usb-indicator" id="usbIndicator">
         <span class="dot"></span>
         <span id="usbStatus">USB Monitoring Off</span>
@@ -973,12 +1042,12 @@
   <div class="app-container">
     <!-- Sidebar -->
     <nav class="sidebar">
-      <div class="nav-item active" data-page="home">
-        <span class="nav-icon">&#127968;</span>
+      <div class="nav-item active" data-page="home" title="Home">
+        <span class="nav-icon">⌂</span>
         <span class="nav-label">Home</span>
       </div>
-      <div class="nav-item" data-page="settings">
-        <span class="nav-icon">&#9881;</span>
+      <div class="nav-item" data-page="settings" title="Settings">
+        <span class="nav-icon">⚙</span>
         <span class="nav-label">Settings</span>
       </div>
     </nav>
@@ -991,19 +1060,22 @@
         <div class="video-panels">
           <div class="card video-list-card">
             <div class="panel-header">
-              <span class="panel-title">Camera Videos</span>
+              <span class="panel-title">Camera</span>
               <select class="sort-select" id="cameraSortSelect">
                 <option value="date-desc">Date (Newest)</option>
                 <option value="date-asc">Date (Oldest)</option>
-                <option value="name-asc">Name (A-Z)</option>
-                <option value="name-desc">Name (Z-A)</option>
+                <option value="name-asc">Name (A–Z)</option>
+                <option value="name-desc">Name (Z–A)</option>
                 <option value="size-desc">Size (Largest)</option>
                 <option value="size-asc">Size (Smallest)</option>
               </select>
             </div>
+            <div class="drive-space-bar hidden" id="driveSpaceBar">
+              <span id="driveSpaceText"></span>
+            </div>
             <div class="video-list" id="cameraVideoList">
               <div class="empty-state" id="cameraEmptyState">
-                <div class="empty-icon">&#128247;</div>
+                <div class="empty-icon">📷</div>
                 <div class="empty-title">No camera connected</div>
                 <div class="empty-description">Connect your camera via USB to see available video files.</div>
               </div>
@@ -1011,40 +1083,32 @@
           </div>
           <div class="card video-list-card">
             <div class="panel-header">
-              <span class="panel-title">Converted Videos</span>
+              <span class="panel-title">Converted</span>
               <select class="sort-select" id="convertedSortSelect">
                 <option value="date-desc">Date (Newest)</option>
                 <option value="date-asc">Date (Oldest)</option>
-                <option value="name-asc">Name (A-Z)</option>
-                <option value="name-desc">Name (Z-A)</option>
+                <option value="name-asc">Name (A–Z)</option>
+                <option value="name-desc">Name (Z–A)</option>
                 <option value="size-desc">Size (Largest)</option>
                 <option value="size-asc">Size (Smallest)</option>
               </select>
             </div>
             <div class="video-list" id="convertedVideoList">
               <div class="empty-state" id="convertedEmptyState">
-                <div class="empty-icon">&#128193;</div>
+                <div class="empty-icon">📁</div>
                 <div class="empty-title">No converted videos</div>
                 <div class="empty-description">Converted videos will appear here after processing.</div>
               </div>
             </div>
           </div>
         </div>
-
-        <!-- Cancel button shown during conversion -->
-        <div id="cancelContainer" class="cancel-container hidden">
-          <button class="action-btn cancel" id="cancelBtn">
-            <span>&#10005;</span> Cancel
-          </button>
-        </div>
       </main>
 
       <!-- Settings Page -->
       <main class="page hidden" id="settingsPage">
-        <!-- Settings Card -->
         <div class="card settings-card">
           <div class="card-header">
-            <div class="card-icon">&#9881;</div>
+            <div class="card-icon">⚙</div>
             <span class="card-title">Settings</span>
           </div>
           <div class="settings-rows">
@@ -1052,7 +1116,7 @@
               <span class="setting-label">Output Folder</span>
               <div style="display: flex; align-items: center; gap: 8px;">
                 <span class="setting-value" id="folderDisplay">No folder selected</span>
-                <button class="btn-icon" id="outputFolderBtn" title="Choose folder" style="width: 28px; height: 28px;">&#128193;</button>
+                <button class="btn-icon" id="outputFolderBtn" title="Choose folder" style="width: 26px; height: 26px;">📁</button>
               </div>
             </div>
             <div class="setting-row">
@@ -1091,7 +1155,11 @@
       <div class="progress-bar" id="progressBar"></div>
     </div>
     <div class="status-content">
-      <div class="status-message" id="status">
+      <div class="status-message" id="status"></div>
+      <div id="cancelContainer" class="cancel-container hidden">
+        <button class="action-btn cancel" id="cancelBtn">
+          <span>✕</span> Cancel
+        </button>
       </div>
     </div>
   </footer>

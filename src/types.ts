@@ -17,6 +17,7 @@ export interface ConvertedVideo {
 export interface DriveStatus {
   connected: boolean;
   clipPath?: string | null;
+  freeBytes?: number | null;
 }
 
 export interface CameraDetectionData {
@@ -70,6 +71,7 @@ export interface UsbMonitoringStatus {
 export interface VideoListResult {
   connected: boolean;
   clipPath?: string;
+  freeBytes?: number | null;
   files: VideoFile[];
 }
 

@@ -13,6 +13,8 @@ let usbMonitoringInterval: ReturnType<typeof setInterval> | null = null;
 let driveMonitoringInterval: ReturnType<typeof setInterval> | null = null;
 let knownMountPoints = new Set<string>();
 let isProcessingCamera = false;
+let driveWatcher: ReturnType<typeof fs.watch> | null = null;
+let driveSpaceUpdateTimer: ReturnType<typeof setTimeout> | null = null;
 
 
 function createWindow(): void {
@@ -205,6 +207,46 @@ function checkForCameraDrive(mountPoints: string[]): string | null {
   return null;
 }
 
+function getDriveSpace(drivePath: string): number | null {
+  try {
+    // --output=avail avoids multi-line wrapping issues with long paths
+    const output = execSync(`df --output=avail -B 1 "${drivePath}"`, { encoding: 'utf8' });
+    const lines = output.trim().split('\n');
+    const freeBytes = parseInt(lines[lines.length - 1].trim(), 10);
+    return isNaN(freeBytes) ? null : freeBytes;
+  } catch {
+    return null;
+  }
+}
+
+function startDriveWatcher(clipPath: string): void {
+  stopDriveWatcher();
+  try {
+    driveWatcher = fs.watch(clipPath, () => {
+      if (driveSpaceUpdateTimer) clearTimeout(driveSpaceUpdateTimer);
+      driveSpaceUpdateTimer = setTimeout(() => {
+        const freeBytes = getDriveSpace(clipPath);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('drive-space-updated', { freeBytes });
+        }
+      }, 500);
+    });
+  } catch (err) {
+    console.error('Error starting drive watcher:', err);
+  }
+}
+
+function stopDriveWatcher(): void {
+  if (driveSpaceUpdateTimer) {
+    clearTimeout(driveSpaceUpdateTimer);
+    driveSpaceUpdateTimer = null;
+  }
+  if (driveWatcher) {
+    driveWatcher.close();
+    driveWatcher = null;
+  }
+}
+
 function getLatestVideoFile(clipPath: string): string | null {
   const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
   try {
@@ -314,8 +356,12 @@ function pollDrives(): void {
             });
           } else {
             mainWindow!.webContents.send('conversion-status', 'No video files found on camera');
+            mainWindow!.webContents.send('camera-detected', { status: 'skipped' } as CameraDetectionData);
             isProcessingCamera = false;
           }
+        } else {
+          // Auto-convert disabled — clear the detection UI state
+          mainWindow!.webContents.send('camera-detected', { status: 'skipped' } as CameraDetectionData);
         }
       }
     }
@@ -548,6 +594,31 @@ ipcMain.handle('clear-camera-folder', async () => {
   return true;
 });
 
+ipcMain.handle('delete-camera-file', async (_event: IpcMainInvokeEvent, filePath: string) => {
+  fs.unlinkSync(filePath);
+  return true;
+});
+
+ipcMain.handle('eject-camera-drive', async () => {
+  const mountPoints = getMountPoints();
+  const clipPath = checkForCameraDrive(mountPoints);
+  if (!clipPath) return false;
+  try {
+    const device = execSync(`df --output=source "${clipPath}" | tail -1`, { encoding: 'utf8' }).trim();
+    stopDriveWatcher();
+    execSync(`udisksctl unmount -b "${device}"`, { encoding: 'utf8' });
+    try {
+      execSync(`udisksctl power-off -b "${device}"`, { encoding: 'utf8' });
+    } catch {
+      // power-off is best-effort; some devices don't support it
+    }
+    return true;
+  } catch (err) {
+    console.error('Error ejecting drive:', err);
+    return false;
+  }
+});
+
 // Video List IPC Handlers
 ipcMain.handle('list-video-files', async () => {
   const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
@@ -600,10 +671,11 @@ ipcMain.handle('list-video-files', async () => {
       })
       .sort((a, b) => b.mtime - a.mtime);
 
-    return { connected: true, clipPath, files };
+    const freeBytes = getDriveSpace(clipPath);
+    return { connected: true, clipPath, freeBytes, files };
   } catch (err) {
     console.error('Error listing video files:', err);
-    return { connected: true, clipPath, files: [] };
+    return { connected: true, clipPath, freeBytes: null, files: [] };
   }
 });
 
@@ -612,7 +684,8 @@ ipcMain.handle('get-drive-status', async () => {
   const clipPath = checkForCameraDrive(mountPoints);
   return {
     connected: clipPath !== null,
-    clipPath
+    clipPath,
+    freeBytes: clipPath ? getDriveSpace(clipPath) : null
   };
 });
 
@@ -653,10 +726,16 @@ function pollDrivesWithNotification(): void {
   // Emit drive-connection-changed if status changed
   if (isConnected !== previousDriveConnected) {
     previousDriveConnected = isConnected;
+    if (isConnected && clipPath) {
+      startDriveWatcher(clipPath);
+    } else {
+      stopDriveWatcher();
+    }
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('drive-connection-changed', {
         connected: isConnected,
-        clipPath
+        clipPath,
+        freeBytes: clipPath ? getDriveSpace(clipPath) : null
       });
     }
   }

@@ -32,6 +32,7 @@ interface FacebookStatus {
 interface DriveConnectionData {
   connected: boolean;
   clipPath: string | null;
+  freeBytes?: number | null;
 }
 
 interface CameraDetectionData {
@@ -57,9 +58,9 @@ interface ElectronApi {
   onCameraDetected: (callback: (data: CameraDetectionData) => void) => void;
   onCopyProgress: (callback: (percent: number) => void) => void;
   onAutoConvertReady: (callback: (filePath: string) => void) => void;
-  listVideoFiles: () => Promise<{ connected: boolean; clipPath?: string; files: VideoFile[] }>;
+  listVideoFiles: () => Promise<{ connected: boolean; clipPath?: string; freeBytes?: number | null; files: VideoFile[] }>;
   listConvertedVideos: () => Promise<{ files: ConvertedVideo[] }>;
-  getDriveStatus: () => Promise<{ connected: boolean; clipPath?: string | null }>;
+  getDriveStatus: () => Promise<{ connected: boolean; clipPath?: string | null; freeBytes?: number | null }>;
   onDriveConnectionChanged: (callback: (data: DriveConnectionData) => void) => void;
   saveFacebookCredentials: (credentials: { appId: string; appSecret: string }) => Promise<boolean>;
   getFacebookStatus: () => Promise<FacebookStatus>;
@@ -69,6 +70,9 @@ interface ElectronApi {
   postToFacebook: (videoPath: string) => Promise<{ success: boolean; videoId: string }>;
   onFacebookUploadProgress: (callback: (percent: number) => void) => void;
   onFacebookStatus: (callback: (message: string) => void) => void;
+  deleteCameraFile: (filePath: string) => Promise<boolean>;
+  onDriveSpaceUpdated: (callback: (data: { freeBytes: number | null }) => void) => void;
+  ejectCameraDrive: () => Promise<boolean>;
 }
 
 declare global {
@@ -88,6 +92,7 @@ const autoConvertToggle = document.getElementById('autoConvertToggle') as HTMLIn
 const usbIndicator = document.getElementById('usbIndicator') as HTMLElement;
 const usbStatus = document.getElementById('usbStatus') as HTMLElement;
 const browseCameraBtn = document.getElementById('browseCameraBtn') as HTMLButtonElement;
+const ejectBtn = document.getElementById('ejectBtn') as HTMLButtonElement;
 
 // Page elements
 const navItems = document.querySelectorAll('.nav-item') as NodeListOf<HTMLElement>;
@@ -130,6 +135,7 @@ let connectedDrivePath: string | null = null;
 let isDriveConnected = false;
 let isUsbMonitoringEnabled = false;
 let manualCameraFolder: string | null = null;
+let cameraFreeBytes: number | null = null;
 
 function showCancelButton(show: boolean): void {
   if (show) {
@@ -193,6 +199,22 @@ function formatFileSize(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+// ~100 Mbps for Sony 4K XAVC S = 12.5 MB/s = 750 MB/min
+const BYTES_PER_MINUTE_4K = 750_000_000;
+
+function updateDriveSpaceDisplay(): void {
+  const bar = document.getElementById('driveSpaceBar') as HTMLElement;
+  if (!bar) return;
+  if (!isDriveConnected || cameraFreeBytes === null) {
+    bar.classList.add('hidden');
+    return;
+  }
+  const minutes = Math.floor(cameraFreeBytes / BYTES_PER_MINUTE_4K);
+  bar.querySelector('#driveSpaceText')!.textContent =
+    `Free: ${formatFileSize(cameraFreeBytes)} · ~${minutes} min of 4K`;
+  bar.classList.remove('hidden');
+}
+
 function formatDate(timestamp: number): string {
   const date = new Date(timestamp);
   const now = new Date();
@@ -214,7 +236,9 @@ async function refreshCameraVideos(): Promise<void> {
     const result = await window.api.listVideoFiles();
     cameraVideos = result.files || [];
     connectedDrivePath = result.clipPath || null;
+    cameraFreeBytes = result.freeBytes ?? null;
     renderCameraVideoList();
+    updateDriveSpaceDisplay();
   } catch (err) {
     console.error('Error refreshing camera videos:', err);
     showCameraEmptyState('Error loading videos');
@@ -304,11 +328,13 @@ function createVideoItem(video: VideoFile | ConvertedVideo, type: 'camera' | 'co
     }
 
     // Show convert button for on-camera and copied videos
-    if (videoStatus !== 'converted') {
-      actionsHtml = `<div class="video-item-actions">
-        <button class="video-action-btn convert" data-action="convert" ${isConverting || !outputFolder ? 'disabled' : ''}>Convert</button>
-      </div>`;
-    }
+    const convertBtn = videoStatus !== 'converted'
+      ? `<button class="video-action-btn convert" data-action="convert" ${isConverting || !outputFolder ? 'disabled' : ''}>Convert</button>`
+      : '';
+    actionsHtml = `<div class="video-item-actions">
+      ${convertBtn}
+      <button class="video-action-btn delete" data-action="delete" ${isConverting ? 'disabled' : ''} title="Delete">🗑</button>
+    </div>`;
   } else {
     // Converted videos
     if ((video as ConvertedVideo).uploaded) {
@@ -350,6 +376,15 @@ function createVideoItem(video: VideoFile | ConvertedVideo, type: 'camera' | 'co
     postBtnEl.addEventListener('click', (e) => {
       e.stopPropagation();
       postToFacebook(video.path);
+    });
+  }
+
+  const deleteBtnEl = item.querySelector('[data-action="delete"]');
+  if (deleteBtnEl) {
+    deleteBtnEl.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await window.api.deleteCameraFile(video.path);
+      item.remove();
     });
   }
 
@@ -411,8 +446,27 @@ function selectVideoFromList(video: VideoFile | ConvertedVideo, _type: 'camera' 
 window.api.onDriveConnectionChanged((data: DriveConnectionData) => {
   connectedDrivePath = data.clipPath;
   isDriveConnected = data.connected;
+  cameraFreeBytes = data.freeBytes ?? null;
   updateUsbIndicator();
+  updateDriveSpaceDisplay();
   refreshCameraVideos();
+});
+
+window.api.onDriveSpaceUpdated((data) => {
+  cameraFreeBytes = data.freeBytes;
+  updateDriveSpaceDisplay();
+});
+
+ejectBtn.addEventListener('click', async () => {
+  ejectBtn.disabled = true;
+  ejectBtn.textContent = 'Ejecting…';
+  const ok = await window.api.ejectCameraDrive();
+  if (!ok) {
+    ejectBtn.textContent = 'Eject';
+    ejectBtn.disabled = false;
+    status.textContent = 'Failed to eject drive';
+    setStatusState('error');
+  }
 });
 
 // Load saved output folder and USB monitoring status on startup
@@ -436,6 +490,7 @@ async function init(): Promise<void> {
   const driveStatus = await window.api.getDriveStatus();
   isDriveConnected = driveStatus.connected;
   connectedDrivePath = driveStatus.clipPath || null;
+  cameraFreeBytes = driveStatus.freeBytes ?? null;
   updateUsbIndicator();
 
   // Load Facebook status
@@ -471,7 +526,7 @@ function updateFacebookUI(fbStatus: FacebookStatus): void {
 }
 
 function disableAllVideoActions(): void {
-  document.querySelectorAll('.video-action-btn').forEach(btn => {
+  document.querySelectorAll('.video-action-btn:not(.delete)').forEach(btn => {
     (btn as HTMLButtonElement).disabled = true;
   });
 }
@@ -532,6 +587,7 @@ function updateUsbIndicator(override?: string): void {
     usbStatus.textContent = 'Camera detected!';
     usbIndicator.classList.add('detected');
     browseCameraBtn.classList.add('hidden');
+    ejectBtn.classList.add('hidden');
     return;
   }
 
@@ -540,20 +596,24 @@ function updateUsbIndicator(override?: string): void {
     usbStatus.textContent = 'USB Connected';
     usbIndicator.classList.add('connected');
     browseCameraBtn.classList.add('hidden');
+    ejectBtn.classList.remove('hidden');
   } else if (isUsbMonitoringEnabled) {
     usbStatus.textContent = 'Monitoring for USB';
     usbIndicator.classList.add('active');
     browseCameraBtn.classList.add('hidden');
+    ejectBtn.classList.add('hidden');
   } else if (manualCameraFolder) {
     const folderName = manualCameraFolder.split('/').pop() || manualCameraFolder;
     usbStatus.textContent = folderName;
     usbIndicator.classList.add('connected');
     browseCameraBtn.textContent = 'Change Folder';
     browseCameraBtn.classList.remove('hidden');
+    ejectBtn.classList.add('hidden');
   } else {
     usbStatus.textContent = 'No Camera';
     browseCameraBtn.textContent = 'Select Camera Folder';
     browseCameraBtn.classList.remove('hidden');
+    ejectBtn.classList.add('hidden');
   }
 }
 
@@ -703,8 +763,8 @@ window.api.onCameraDetected((data: CameraDetectionData) => {
       break;
     case 'skipped':
       updateUsbIndicator();
-      status.textContent = `${data.file} already processed, skipping`;
-      setStatusState('success');
+      status.textContent = data.file ? `${data.file} already processed, skipping` : '';
+      setStatusState(data.file ? 'success' : null);
       outputFolderBtn.disabled = false;
       usbToggle.disabled = false;
       enableAllVideoActions();
